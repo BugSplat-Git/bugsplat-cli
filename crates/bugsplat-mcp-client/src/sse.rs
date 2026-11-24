@@ -10,13 +10,30 @@ pub(crate) struct SseParser {
     // How much of `buffer` is already known to hold no line ending, so a long line that
     // arrives in many chunks is searched once, not once per chunk.
     scanned: usize,
+    // Whether the start of the stream, where a byte order mark may sit, is behind us.
+    started: bool,
 }
+
+const BYTE_ORDER_MARK: &[u8] = b"\xef\xbb\xbf";
 
 impl SseParser {
     /// The data of every event `chunk` completes. Lines end in CR, LF or CRLF.
     pub(crate) fn push(&mut self, chunk: &[u8]) -> Vec<String> {
         self.buffer.extend_from_slice(chunk);
         let mut events = Vec::new();
+        if !self.started {
+            // The stream format says to ignore one leading byte order mark; left in, it
+            // would hide the first line's field name.
+            if self.buffer.len() < BYTE_ORDER_MARK.len()
+                && BYTE_ORDER_MARK.starts_with(&self.buffer)
+            {
+                return events;
+            }
+            if self.buffer.starts_with(BYTE_ORDER_MARK) {
+                self.buffer.drain(..BYTE_ORDER_MARK.len());
+            }
+            self.started = true;
+        }
         let mut start = 0;
         let mut from = self.scanned;
         loop {
@@ -127,6 +144,20 @@ mod tests {
             assert!(parser.push(chunk).is_empty());
         }
         assert_eq!(parser.push(b"\n\n"), vec![payload]);
+    }
+
+    #[test]
+    fn a_leading_byte_order_mark_is_ignored() {
+        let mut parser = SseParser::default();
+        assert_eq!(parser.push(b"\xef\xbb\xbfdata: {}\n\n"), vec!["{}"]);
+
+        let mut split = SseParser::default();
+        assert!(split.push(b"\xef\xbb").is_empty());
+        assert_eq!(split.push(b"\xbfdata: 1\n\ndata: 2\n\n"), vec!["1", "2"]);
+
+        let mut short = SseParser::default();
+        assert!(short.push(b"\xef").is_empty());
+        assert!(short.finish().is_empty());
     }
 
     #[test]

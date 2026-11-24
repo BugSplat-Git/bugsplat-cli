@@ -31,7 +31,7 @@ The CLI stores your session in your operating system's keychain. On a machine wi
 
 ## Commands
 
-The table lists the commands planned for the first release. A command that is not built yet exits with "not implemented yet" and a link to its issue.
+The table lists the commands in the first release.
 
 | Command | What it does |
 | --- | --- |

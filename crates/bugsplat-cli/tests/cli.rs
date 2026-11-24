@@ -42,7 +42,6 @@ fn help_lists_the_commands() {
         "symbols",
         "tool",
         "completions",
-        "mcp",
     ] {
         assert!(help.contains(command), "--help is missing `{command}`");
     }
@@ -79,19 +78,9 @@ fn completions_prints_a_script() {
 }
 
 #[test]
-fn an_unbuilt_command_fails_with_a_link_to_its_issue() {
-    bugsplat()
-        .arg("mcp")
-        .assert()
-        .code(1)
-        .stderr(predicate::str::contains("not implemented yet"))
-        .stderr(predicate::str::contains("/issues/9"));
-}
-
-#[test]
 fn a_bad_api_url_is_a_usage_error() {
     bugsplat()
-        .args(["--api-url", "not a url", "mcp"])
+        .args(["--api-url", "not a url", "whoami"])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("Invalid API URL"));

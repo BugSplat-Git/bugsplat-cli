@@ -7,6 +7,9 @@ pub(crate) struct SseParser {
     data: Vec<String>,
     // The last line ended in CR; an LF that follows, even in the next chunk, belongs to it.
     after_cr: bool,
+    // How much of `buffer` is already known to hold no line ending, so a long line that
+    // arrives in many chunks is searched once, not once per chunk.
+    scanned: usize,
 }
 
 impl SseParser {
@@ -15,6 +18,7 @@ impl SseParser {
         self.buffer.extend_from_slice(chunk);
         let mut events = Vec::new();
         let mut start = 0;
+        let mut from = self.scanned;
         loop {
             if self.after_cr {
                 match self.buffer.get(start) {
@@ -24,13 +28,14 @@ impl SseParser {
                 }
                 self.after_cr = false;
             }
-            let Some(length) = self.buffer[start..]
+            from = from.max(start);
+            let Some(length) = self.buffer[from..]
                 .iter()
                 .position(|byte| matches!(byte, b'\n' | b'\r'))
             else {
                 break;
             };
-            let end = start + length;
+            let end = from + length;
             let line = String::from_utf8_lossy(&self.buffer[start..end]).into_owned();
             self.after_cr = self.buffer[end] == b'\r';
             start = end + 1;
@@ -46,6 +51,7 @@ impl SseParser {
             }
         }
         self.buffer.drain(..start);
+        self.scanned = self.buffer.len();
         events
     }
 
@@ -110,6 +116,17 @@ mod tests {
         assert_eq!(parser.push(b"\n\r"), vec!["{}"]);
         assert!(parser.push(b"\ndata: 1\r\n").is_empty());
         assert_eq!(parser.push(b"\r\n"), vec!["1"]);
+    }
+
+    #[test]
+    fn a_long_line_in_many_chunks_is_one_event() {
+        let mut parser = SseParser::default();
+        let payload = "x".repeat(1024 * 1024);
+        assert!(parser.push(b"data: ").is_empty());
+        for chunk in payload.as_bytes().chunks(512) {
+            assert!(parser.push(chunk).is_empty());
+        }
+        assert_eq!(parser.push(b"\n\n"), vec![payload]);
     }
 
     #[test]

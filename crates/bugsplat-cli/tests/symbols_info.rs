@@ -146,7 +146,11 @@ fn prints_a_dsym_bundle_as_json() {
     assert_eq!(
         info_json(&[&bundle]),
         json!([{
-            "path": bundle.join("Contents/Resources/DWARF/bugsplat"),
+            "path": bundle
+                .join("Contents")
+                .join("Resources")
+                .join("DWARF")
+                .join("bugsplat"),
             "moduleName": "bugsplat",
             "debugId": "ac15902fba2e31c18b29da51e889b321",
             "kind": "mach-o",

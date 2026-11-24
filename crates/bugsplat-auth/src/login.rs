@@ -63,6 +63,7 @@ async fn client_id(http: &Client, sessions: &Sessions, server: &ServerMetadata) 
         let no_redirects = Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .user_agent(concat!("bugsplat-cli/", env!("CARGO_PKG_VERSION")))
+            .timeout(crate::REQUEST_TIMEOUT)
             .build()?;
         if oauth::client_is_registered(&no_redirects, &server.authorization_endpoint, &cached)
             .await?

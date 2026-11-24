@@ -41,6 +41,10 @@ cd "$work/project"
 npm init -y > /dev/null
 npm install --no-audit --no-fund "$work/package.tgz"
 
+# Credentials in the caller's environment would outrank the empty session store and could
+# send `whoami` to the real API.
+unset BUGSPLAT_ACCESS_TOKEN BUGSPLAT_CLIENT_ID BUGSPLAT_CLIENT_SECRET BUGSPLAT_DATABASE \
+  BUGSPLAT_API_URL BUGSPLAT_HOST SYMBOL_UPLOAD_CLIENT_ID SYMBOL_UPLOAD_CLIENT_SECRET
 export BUGSPLAT_TOKEN_STORE=file
 export BUGSPLAT_CONFIG_DIR="$work/config"
 version=$(npx --no-install bugsplat --version)
@@ -48,7 +52,7 @@ echo "$version"
 [[ $version == "bugsplat "* ]] || { echo "FAIL: unexpected --version output" >&2; exit 1; }
 
 set +e
-npx --no-install bugsplat whoami
+npx --no-install bugsplat --api-url http://127.0.0.1:9 whoami
 code=$?
 set -e
 [[ $code -eq 3 ]] || { echo "FAIL: exit code $code did not pass through npm's wrapper, expected 3" >&2; exit 1; }

@@ -869,6 +869,38 @@ async fn the_email_comes_from_the_token_response_or_the_access_token() {
 }
 
 #[tokio::test]
+async fn a_sign_in_during_a_refresh_is_the_session_that_stays() {
+    let fixture = Fixture::new().await;
+    fixture.store("access-1", -10).await;
+    fixture
+        .refresh_request("refresh-1")
+        .respond_with(rotated_tokens().set_delay(Duration::from_millis(300)))
+        .mount(&fixture.server)
+        .await;
+    let new_session = Session {
+        access_token: "other-account".into(),
+        refresh_token: Some("other-refresh".into()),
+        expires_at: now().saturating_add_signed(3600),
+        client_id: "client-1".into(),
+        token_endpoint: fixture.uri("/oauth/token"),
+        email: Some("wilma@example.com".into()),
+    };
+
+    let sign_in = async {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        fixture.sessions.sign_in(new_session).await
+    };
+    let (refreshed, signed_in) = tokio::join!(fixture.access_token(None), sign_in);
+
+    assert_eq!(refreshed.unwrap().secret, "access-2");
+    signed_in.unwrap();
+    assert_eq!(
+        fixture.stored().await.unwrap().access_token,
+        "other-account"
+    );
+}
+
+#[tokio::test]
 async fn logout_during_a_refresh_leaves_no_session() {
     let fixture = Fixture::new().await;
     fixture.store("access-1", -10).await;

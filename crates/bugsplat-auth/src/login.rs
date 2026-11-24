@@ -54,7 +54,7 @@ pub(crate) async fn run(
     )
     .await?;
     let session = Session::new(tokens, &client_id, &discovery.server.token_endpoint);
-    sessions.save(session.clone()).await?;
+    sessions.sign_in(session.clone()).await?;
     Ok(session)
 }
 

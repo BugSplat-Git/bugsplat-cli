@@ -22,7 +22,7 @@ The release workflow builds `bugsplat` for six targets and attaches these files 
 
 The Linux binaries are statically linked, so the same file runs on glibc distributions and on Alpine. `bugsplat` verifies HTTPS connections with the CA certificates installed on the system. An image without them, such as `node:22-slim`, needs the `ca-certificates` package, or every command that talks to BugSplat fails with `No CA certificates were loaded from the system`.
 
-The workflow publishes to npm only after `publish-jobs = ["npm"]` is added to `dist-workspace.toml`. Until then, a release stops at the GitHub Release.
+The workflow does not publish to npm. A person publishes the npm package from the GitHub Release (see "Publishing to npm").
 
 We have not run either install script. Run both against the first prerelease before you document them.
 
@@ -37,13 +37,13 @@ npm is the primary way to install the CLI: `npm install -g @bugsplat/cli`.
 - The package has one dependency, `detect-libc`.
 - The package's README is this repository's `README.md`, so the "not released" notice has to come out of the README before the first publish.
 
-A machine without Node.js can use the archive for its platform from the GitHub Release. The archive holds the `bugsplat` binary, which needs nothing else installed.
+A machine without Node.js can use the archive for its platform from the GitHub Release. The archive holds the `bugsplat` binary, which runs without Node.js.
 
 ## Build every target without releasing
 
 The "Build release artifacts" workflow (`.github/workflows/build-artifacts.yml`) builds everything in the table above and keeps the files as workflow artifacts for seven days. It never creates a tag, a GitHub Release, or a package. The workflow also:
 
-- runs `.github/scripts/smoke-test.sh` on each binary on a runner of its own platform: `bugsplat --version`, `bugsplat symbols info` on committed PDB, PE, ELF and dSYM fixtures, and `whoami` and `logout` against a session in the file token store;
+- runs `.github/scripts/smoke-test.sh` on each binary on a runner of its own platform: `bugsplat --version`, `bugsplat symbols info` on committed PDB, PE, ELF and dSYM fixtures, and `whoami` and `logout` against a session in the file token store. On the runner, the script also checks the operating system's credential store: that the macOS keychain and the Windows Credential Manager answer, and that a Linux machine with no Secret Service falls back to the file;
 - installs the generated npm package into a temporary project with `.github/scripts/npm-package-test.sh` and runs `bugsplat --version` through it. The script points the package's download URL at the archives the run just built, because the GitHub Release does not exist yet.
 
 The workflow runs only when you start it:
@@ -71,10 +71,28 @@ Both scripts set `BUGSPLAT_TOKEN_STORE=file` and a temporary `BUGSPLAT_CONFIG_DI
 Each of these needs a person with access we do not give to automation.
 
 1. **Make the repository public.** The npm package and both install scripts download from GitHub Releases, which only works for a public repository.
-2. **Create the npm token.** In the `@bugsplat` organization on npmjs.com, create a granular access token that can read and write packages, and save it as the `NPM_TOKEN` secret of this repository. The token has to be allowed to create the new package `@bugsplat/cli`. npm limits how long a write token lives, so put its expiry date in a calendar.
-3. **Turn on npm publishing.** In `dist-workspace.toml`, add `publish-jobs = ["npm"]` under `npm-package`, uncomment the `actions/setup-node` line, run `dist generate`, and commit both files. The generated job runs `npm publish --access public` after the GitHub Release exists, and skips prereleases.
-4. **Sign the macOS binaries.** See the next section. The certificate has to come from our Apple Developer account.
+2. **Choose who publishes to npm.** That person needs permission to publish packages in the `@bugsplat` organization on npmjs.com. See "Publishing to npm".
+3. **Agree on the version.** `Cargo.toml` says `0.1.0`.
+4. **Sign the macOS binaries.** See "macOS signing and notarization". The certificate has to come from our Apple Developer account.
 5. **Update the README.** Remove the "not released" notice and replace the build-from-source instructions with the npm command.
+
+## Publishing to npm
+
+A person publishes each version, from the package file the release built:
+
+```bash
+gh release download v0.1.0 --pattern bugsplat-cli-npm-package.tar.gz
+npm publish --access public bugsplat-cli-npm-package.tar.gz
+```
+
+Run `npm login` first. `--access public` is required because npm publishes a scoped package as private by default.
+
+We publish by hand for two reasons:
+
+- npm's [trusted publishing](https://docs.npmjs.com/trusted-publishers), which lets a workflow publish without a stored token, is set up on the package's settings page. The package has to exist first, so someone has to publish the first version.
+- dist 0.34.0 can generate an npm publish job (`publish-jobs = ["npm"]`), and that job signs in with an `NPM_TOKEN` secret on Node.js 20. npm's [access token page](https://docs.npmjs.com/about-access-tokens) says publishing new versions directly with a token will be removed in January 2027.
+
+To publish later releases from the workflow, the repository needs its own publish job in place of dist's: Node.js 22.14 or later, npm 11.5.1 or later, the `id-token: write` permission, and a trusted publisher on npmjs.com that names this repository and its release workflow. We have not written or tested that job.
 
 ## macOS signing and notarization
 
@@ -141,7 +159,7 @@ Notarization records the signed binary with Apple and does not change the file, 
 
 1. **Set the version.** Change `version` under `[workspace.package]` in `Cargo.toml`, run `cargo check` so `Cargo.lock` follows, and merge the change to `main` through a pull request. The tag has to match this version.
 2. **Build every target.** Run the "Build release artifacts" workflow on `main` and wait for every job to pass.
-3. **Rehearse with a prerelease** when the release workflow, signing, or the npm settings changed since the last release. Set the version to a prerelease such as `0.2.0-rc.1`, tag it `v0.2.0-rc.1`, and push the tag. The workflow creates a GitHub prerelease and does not publish to npm. Check the files, then delete the prerelease and its tag if you do not want to keep them.
+3. **Rehearse with a prerelease** when the release workflow or signing changed since the last release. Set the version to a prerelease such as `0.2.0-rc.1`, tag it `v0.2.0-rc.1`, and push the tag. The workflow creates a GitHub prerelease. A prerelease works while the repository is private, but only people with access to the repository can download its files. Check the files, then delete the prerelease and its tag if you do not want to keep them.
 4. **Tag the release** on the `main` commit from step 1:
 
    ```bash
@@ -150,9 +168,9 @@ Notarization records the signed binary with Apple and does not change the file, 
    git push origin v0.1.0
    ```
 
-5. **Watch the Release workflow** with `gh run watch`. It builds the six targets, creates the GitHub Release, and then publishes to npm if publishing is on.
+5. **Watch the Release workflow** with `gh run watch`. It builds the six targets and creates the GitHub Release.
 6. **Check the GitHub Release.** It has the files listed under "What a release contains".
-7. **Check the npm package** in an empty folder:
+7. **Publish the npm package** with the two commands under "Publishing to npm", then check it in an empty folder:
 
    ```bash
    npm view @bugsplat/cli version
@@ -164,7 +182,7 @@ Notarization records the signed binary with Apple and does not change the file, 
 8. **Check the macOS signature** with the two `codesign` commands above, on the binary npm installed: `node_modules/@bugsplat/cli/node_modules/.bin_real/bugsplat`.
 9. **Sign in with the released binary** on macOS: `bugsplat login`, then `bugsplat whoami`. After the next release, upgrade and run `bugsplat whoami` again. macOS should not ask for your password.
 
-If the npm publish fails after the GitHub Release exists, fix the cause and run `npm publish --access public` yourself on the `bugsplat-cli-npm-package.tar.gz` file from the release. npm never lets a version number be reused, so a release that published a broken package needs a new patch version.
+npm never lets a version number be reused, so a release that published a broken package needs a new patch version.
 
 ## Toolchain versions
 

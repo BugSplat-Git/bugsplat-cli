@@ -29,8 +29,8 @@ install-path = "~/.bugsplat/bin"
 install-updater = false
 
 # npm is the primary installer, as @bugsplat/cli. A release builds the package and attaches it
-# to the GitHub Release, and nothing sends it to npm until `publish-jobs = ["npm"]` is added
-# (RELEASING.md).
+# to the GitHub Release; a person publishes it from there (RELEASING.md). dist's own publish
+# job (`publish-jobs = ["npm"]`) signs in with a token, which npm is retiring for publishing.
 npm-scope = "@bugsplat"
 npm-package = "cli"
 
@@ -46,5 +46,3 @@ npm-package = "cli"
 "actions/upload-artifact" = "cf430e030ddbb5b0abf93d22962f4752f3646cd9" # v7.0.2
 "actions/download-artifact" = "9000827ccba6bdab643e8b6fd33ac0654aef8333" # v8.0.2
 "swatinem/rust-cache" = "d1527c8f67ef9af357290475d4af4b0fab8f12e0" # v2.9.3
-# Used by the npm publish job, once it is on.
-# "actions/setup-node" = "249970729cb0ef3589644e2896645e5dc5ba9c38" # v6.5.0

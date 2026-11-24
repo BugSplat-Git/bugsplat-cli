@@ -290,6 +290,30 @@ async fn reports_list_maps_its_flags() {
 }
 
 #[tokio::test]
+async fn reports_reprocess_maps_its_arguments() {
+    assert_call(
+        &["reports", "reprocess", "42"],
+        "reprocess-report",
+        json!({"id": 42}),
+    )
+    .await;
+    assert_call(
+        &[
+            "reports",
+            "reprocess",
+            "42",
+            "--force",
+            "--yes",
+            "-b",
+            "Fred",
+        ],
+        "reprocess-report",
+        json!({"id": 42, "force": true, "database": "Fred"}),
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn reports_get_maps_its_arguments() {
     assert_call(&["reports", "get", "42"], "get-report", json!({"id": 42})).await;
     assert_call(
@@ -563,6 +587,16 @@ async fn defects_create_and_link_need_yes_without_a_terminal() {
         assert!(run.stdout.is_empty());
         assert!(server.received_requests().await.unwrap().is_empty());
     }
+}
+
+#[tokio::test]
+async fn a_forced_reprocess_needs_confirmation() {
+    let server = MockServer::start().await;
+    let run = bugsplat(&server, &["reports", "reprocess", "42", "--force"]).await;
+    assert_eq!(run.code, 2, "{}", run.stderr);
+    assert!(run.stderr.contains("crash 42"), "{}", run.stderr);
+    assert!(run.stderr.contains("--yes"), "{}", run.stderr);
+    assert!(server.received_requests().await.unwrap().is_empty());
 }
 
 #[tokio::test]

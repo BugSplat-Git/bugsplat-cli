@@ -1,10 +1,12 @@
-//! `reports`: `list-reports` and `get-report`.
+//! `reports`: `list-reports`, `get-report` and `reprocess-report`.
 //! https://github.com/BugSplat-Git/bugsplat-cli/issues/4
 
+use bugsplat_core::Error;
 use clap::{Args, Subcommand};
 
 use super::tool::{self, FILTER_HELP, ToolArguments};
 use crate::context::Context;
+use crate::output::confirm;
 
 #[derive(Debug, Subcommand)]
 pub enum ReportsCommand {
@@ -13,6 +15,8 @@ pub enum ReportsCommand {
     List(Box<ListArgs>),
     /// Show one crash report in full
     Get(GetArgs),
+    /// Ask BugSplat to process a crash report again, for example after uploading its symbols
+    Reprocess(ReprocessArgs),
 }
 
 #[derive(Debug, Args)]
@@ -73,6 +77,19 @@ pub struct GetArgs {
     pub id: u64,
 }
 
+#[derive(Debug, Args)]
+pub struct ReprocessArgs {
+    /// Crash id, from `reports list` or `groups get`
+    pub id: u64,
+    /// Clear the stored stack and group first, and reprocess even when the version's symbols
+    /// were deleted. The current stack can't be rebuilt without those symbols.
+    #[arg(long)]
+    pub force: bool,
+    /// Don't ask for confirmation (only --force asks)
+    #[arg(short, long)]
+    pub yes: bool,
+}
+
 pub async fn run(command: ReportsCommand, ctx: &Context) -> anyhow::Result<()> {
     match command {
         ReportsCommand::List(args) => {
@@ -99,6 +116,21 @@ pub async fn run(command: ReportsCommand, ctx: &Context) -> anyhow::Result<()> {
         ReportsCommand::Get(args) => {
             let arguments = ToolArguments::for_database(ctx).set("id", args.id);
             tool::call(ctx, "get-report", arguments).await
+        }
+        ReportsCommand::Reprocess(args) => {
+            if args.force {
+                let prompt = format!(
+                    "Clear the stored stack and group of crash {} and reprocess it? If its version's symbols were deleted, the current stack can't be rebuilt.",
+                    args.id
+                );
+                if !confirm(&prompt, args.yes)? {
+                    return Err(Error::Other("Cancelled. Nothing was changed.".to_string()).into());
+                }
+            }
+            let arguments = ToolArguments::for_database(ctx)
+                .set("id", args.id)
+                .flag("force", args.force);
+            tool::call(ctx, "reprocess-report", arguments).await
         }
     }
 }

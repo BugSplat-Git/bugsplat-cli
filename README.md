@@ -39,7 +39,7 @@ The table lists the commands in the first release.
 | --- | --- |
 | `bugsplat login`, `logout`, `whoami` | Sign in through your browser, sign out, and show who is signed in |
 | `bugsplat databases list` | List the databases you can open |
-| `bugsplat reports list`, `reports get <id>` | List crash reports, or show one |
+| `bugsplat reports list`, `reports get <id>`, `reports reprocess <id>` | List crash reports, show one, or ask BugSplat to process one again |
 | `bugsplat groups list`, `groups get <id>`, `groups set-status <id> <status>` | List crash groups, show one, or change its status |
 | `bugsplat versions list` | List application versions |
 | `bugsplat defects create`, `link`, `unlink` | File a crash group as a defect in your issue tracker, link it to a defect that already exists, or remove the link |

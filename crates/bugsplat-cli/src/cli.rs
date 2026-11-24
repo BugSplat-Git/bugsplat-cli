@@ -24,31 +24,52 @@ pub struct Cli {
 #[derive(Debug, Args)]
 pub struct GlobalArgs {
     /// BugSplat database. Defaults to your default database for commands that read crash data.
-    #[arg(short = 'b', long, global = true, env = "BUGSPLAT_DATABASE")]
+    #[arg(
+        short = 'b',
+        long,
+        global = true,
+        help_heading = "Global options",
+        env = "BUGSPLAT_DATABASE"
+    )]
     pub database: Option<String>,
 
     /// Base URL of the BugSplat API [default: https://api.bugsplat.com] [env: BUGSPLAT_API_URL, BUGSPLAT_HOST]
-    #[arg(long, global = true, value_name = "URL")]
+    #[arg(
+        long,
+        global = true,
+        help_heading = "Global options",
+        value_name = "URL"
+    )]
     pub api_url: Option<String>,
 
     /// OAuth Client ID for the database, for CI [env: BUGSPLAT_CLIENT_ID, SYMBOL_UPLOAD_CLIENT_ID]
-    #[arg(long, global = true, value_name = "ID")]
+    #[arg(
+        long,
+        global = true,
+        help_heading = "Global options",
+        value_name = "ID"
+    )]
     pub client_id: Option<String>,
 
     /// OAuth Client Secret for the database, for CI [env: BUGSPLAT_CLIENT_SECRET, SYMBOL_UPLOAD_CLIENT_SECRET]
-    #[arg(long, global = true, value_name = "SECRET")]
+    #[arg(
+        long,
+        global = true,
+        help_heading = "Global options",
+        value_name = "SECRET"
+    )]
     pub client_secret: Option<String>,
 
     /// Print JSON instead of text
-    #[arg(long, global = true)]
+    #[arg(long, global = true, help_heading = "Global options")]
     pub json: bool,
 
     /// Print only results and errors
-    #[arg(short, long, global = true)]
+    #[arg(short, long, global = true, help_heading = "Global options")]
     pub quiet: bool,
 
     /// Print more detail about what the command is doing
-    #[arg(long, global = true)]
+    #[arg(long, global = true, help_heading = "Global options")]
     pub verbose: bool,
 }
 

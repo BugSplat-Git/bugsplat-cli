@@ -43,7 +43,7 @@ impl Tree {
     fn path(&self, relative: &str) -> PathBuf {
         relative
             .split('/')
-            .fold(self.root(), |path, part| path.join(part))
+            .fold(self.root().to_path_buf(), |path, part| path.join(part))
     }
 
     fn write(&self, relative: &str, bytes: &[u8]) -> PathBuf {

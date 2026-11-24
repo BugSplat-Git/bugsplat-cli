@@ -201,6 +201,34 @@ fn dump_keeps_files_that_share_a_name_apart_by_debug_id() {
 }
 
 #[test]
+fn dump_does_not_replace_a_file_it_wrote_for_the_same_module() {
+    let dir = tempfile::tempdir().unwrap();
+    let hockey = fixture(HOCKEY);
+    let copy = dir.path().join("HockeySDKResources");
+    fs::copy(&hockey, &copy).unwrap();
+    let assert = bugsplat(dir.path())
+        .args(["symbols", "dump", "--json", "-o", "syms"])
+        .arg(&hockey)
+        .arg(&copy)
+        .assert()
+        .code(1);
+
+    let dumped = json_stdout(&assert);
+    assert_eq!(dumped.as_array().unwrap().len(), 2);
+    assert_eq!(dumped[0]["source"], json!(hockey));
+    assert_eq!(dumped[1]["source"], json!(hockey));
+    let err = stderr(&assert);
+    assert!(
+        err.contains(&format!(
+            "{}: its HockeySDKResources.sym would replace the one written from {}",
+            copy.display(),
+            hockey.display()
+        )),
+        "{err}"
+    );
+}
+
+#[test]
 fn dump_converts_what_it_can_and_fails_for_the_rest() {
     let dir = tempfile::tempdir().unwrap();
     let portable = fixture("symbol-upload/portable.pdb");
@@ -384,14 +412,14 @@ async fn dump_syms_with_local_path_stores_the_sym_file_under_the_pdb_name() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_binary_and_its_pdb_selected_together_upload_one_sym_file() {
+async fn a_binary_and_its_pdb_selected_together_upload_one_sym_file_made_from_both() {
     let dir = tempfile::tempdir().unwrap();
-    let build = dir.path().join("build");
-    fs::create_dir(&build).unwrap();
-    fs::copy(fixture("pdb-guid/bugsplat.dll"), build.join("bugsplat.dll")).unwrap();
-    // Named as the DLL's debug directory spells it. Where file names are case sensitive the
-    // PDB then can't find `BugSplat.dll`, and its .sym file lacks the code id.
-    fs::copy(fixture("pdb-guid/bugsplat.pdb"), build.join("BugSplat.pdb")).unwrap();
+    let bin = dir.path().join("build").join("bin");
+    let pdbs = dir.path().join("build").join("pdbs");
+    fs::create_dir_all(&bin).unwrap();
+    fs::create_dir_all(&pdbs).unwrap();
+    fs::copy(fixture("pdb-guid/bugsplat.dll"), bin.join("bugsplat.dll")).unwrap();
+    fs::copy(fixture("pdb-guid/bugsplat.pdb"), pdbs.join("bugsplat.pdb")).unwrap();
     let mut command = bugsplat(dir.path());
     command.args([
         "symbols",
@@ -399,7 +427,7 @@ async fn a_binary_and_its_pdb_selected_together_upload_one_sym_file() {
         "-d",
         "build",
         "-f",
-        "*.{pdb,exe,dll}",
+        "**/*.{pdb,exe,dll}",
         "-m",
         "-l",
         "store",
@@ -419,13 +447,15 @@ async fn a_binary_and_its_pdb_selected_together_upload_one_sym_file() {
         .join("E546B55B6D214E86871B40AC35CD0D461")
         .join("BugSplat.sym");
     let text = fs::read_to_string(stored).unwrap();
-    let head = &text[..200];
     assert!(
-        head.starts_with("MODULE windows x86 E546B55B6D214E86871B40AC35CD0D461 BugSplat.pdb\n"),
-        "{head}"
+        text.starts_with(
+            "MODULE windows x86 E546B55B6D214E86871B40AC35CD0D461 BugSplat.pdb\nINFO CODE_ID 64FB82ED7A000 bugsplat.dll\n"
+        ),
+        "{}",
+        &text[..200]
     );
-    assert!(head.contains("\nINFO CODE_ID 64FB82ED7A000 "), "{head}");
     assert!(text.contains("\nFUNC "));
+    assert!(text.contains("\nSTACK "));
 }
 
 #[tokio::test(flavor = "multi_thread")]

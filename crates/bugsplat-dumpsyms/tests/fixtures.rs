@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use bugsplat_dumpsyms::{Error, Symbols, read};
+use bugsplat_dumpsyms::{Companions, Error, Symbols, read, read_with};
 
 const HOCKEY: &str = "macho-uuid/bugsplat-ios.app/Frameworks/bugsplat.framework/HockeySDKResources.bundle/Contents/MacOS/HockeySDKResources";
 
@@ -222,6 +222,51 @@ fn pe_is_combined_with_the_pdb_next_to_it() {
     let combined = sym_text(&all[0]);
     assert_eq!(records(&combined, "FUNC"), 4134);
     assert_eq!(records(&combined, "STACK"), 6973);
+}
+
+#[test]
+fn a_pe_and_pdb_in_different_folders_pair_up_when_converted_together() {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    let pdbs = dir.path().join("pdbs");
+    fs::create_dir_all(&bin).unwrap();
+    fs::create_dir_all(&pdbs).unwrap();
+    let dll = bin.join("bugsplat.dll");
+    let pdb = pdbs.join("bugsplat.pdb");
+    fs::copy(fixture("pdb-guid/bugsplat.dll"), &dll).unwrap();
+    fs::copy(fixture("pdb-guid/bugsplat.pdb"), &pdb).unwrap();
+    // Same names, another build: never paired.
+    let other = dir.path().join("other");
+    fs::create_dir_all(&other).unwrap();
+    fs::copy(fixture("pdb-guid/bssndrpt.exe"), other.join("bugsplat.dll")).unwrap();
+    fs::copy(fixture("pdb-guid/bssndrpt.exe"), other.join("bugsplat.exe")).unwrap();
+
+    assert_eq!(records(&sym_text(&read(&dll).unwrap()[0]), "FUNC"), 0);
+    assert!(!sym_text(&read(&pdb).unwrap()[0]).contains("INFO CODE_ID"));
+
+    let companions = Companions::new(&[
+        other.join("bugsplat.dll"),
+        other.join("bugsplat.exe"),
+        dll.clone(),
+        pdb.clone(),
+    ]);
+    let from_dll = read_with(&dll, &companions).unwrap();
+    assert_eq!(
+        module_lines(&from_dll),
+        ["MODULE windows x86 E546B55B6D214E86871B40AC35CD0D461 BugSplat.pdb"]
+    );
+    let text = sym_text(&from_dll[0]);
+    assert_eq!(records(&text, "FUNC"), 4134);
+    assert_eq!(records(&text, "STACK"), 6973);
+
+    let from_pdb = read_with(&pdb, &companions).unwrap();
+    let text = sym_text(&from_pdb[0]);
+    assert!(
+        text.contains("INFO CODE_ID 64FB82ED7A000 bugsplat.dll\n"),
+        "{}",
+        &text[..200]
+    );
+    assert_eq!(records(&text, "FUNC"), 4134);
 }
 
 #[test]

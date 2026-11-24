@@ -1,6 +1,8 @@
 //! `symbols dump`, and the `.sym` generation behind `symbols upload --dump-syms`.
 //! https://github.com/BugSplat-Git/bugsplat-cli/issues/11
 
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::path::{Path, PathBuf};
 
 use bugsplat_core::Error;
@@ -43,11 +45,12 @@ pub async fn run(args: Args, ctx: &Context) -> anyhow::Result<()> {
     if !cfg!(feature = "dump-syms") {
         return Err(Error::Other(UNAVAILABLE.to_string()).into());
     }
+    let companions = Companions::new(&args.files);
     let mut dumped = Vec::new();
     let mut failures = Vec::new();
-    let mut written = Vec::new();
+    let mut written = HashMap::new();
     for file in &args.files {
-        match dump_into(file, &args.output, &mut written) {
+        match dump_into(file, &companions, &args.output, &mut written) {
             Ok(found) => dumped.extend(found),
             Err(error) => failures.push(error),
         }
@@ -88,12 +91,13 @@ pub(super) fn dump_for_upload(
     if !cfg!(feature = "dump-syms") {
         return Err(Error::Other(UNAVAILABLE.to_string()).into());
     }
+    let companions = Companions::new(paths);
     let mut dumped: Vec<Dumped> = Vec::new();
     let mut folders = 0usize;
     for path in paths {
-        let found = dump(path, |_| {
+        let found = dump(path, &companions, |_| {
             folders += 1;
-            dir.join(folders.to_string())
+            Ok(dir.join(folders.to_string()))
         });
         match found {
             Ok(found) => {
@@ -126,23 +130,38 @@ pub(super) fn dump_for_upload(
 }
 
 /// A glob like `**/*.{pdb,exe,dll}` selects a binary and its PDB, and both yield the module's
-/// `.sym` file, which BugSplat stores once. The larger one is kept: the PDB alone has no
-/// unwind data when it isn't named after its binary.
+/// `.sym` file, which BugSplat stores once. Each is generated from both halves when it finds
+/// the other; when one doesn't, it is the smaller, so the larger is kept.
 fn one_per_module(dumped: Vec<Dumped>) -> Vec<Dumped> {
     let size = |sym: &Dumped| std::fs::metadata(&sym.path).map_or(0, |metadata| metadata.len());
     let key = |sym: &Dumped| {
-        (
-            sym.debug_id.to_lowercase(),
-            sym.module_name.to_lowercase(),
-            file_name(&sym.path).to_lowercase(),
-        )
+        let name = file_name(&sym.path);
+        // Only Windows module names ignore case: `BugSplat.pdb` and `bugsplat.pdb` are one
+        // module, `libFoo.so` and `libfoo.so` are two.
+        if sym.os.eq_ignore_ascii_case("windows") {
+            (
+                sym.debug_id.to_lowercase(),
+                sym.module_name.to_lowercase(),
+                name.to_lowercase(),
+            )
+        } else {
+            (sym.debug_id.clone(), sym.module_name.clone(), name)
+        }
     };
     let mut kept: Vec<Dumped> = Vec::new();
+    let mut positions = HashMap::new();
     for sym in dumped {
-        match kept.iter_mut().find(|other| key(other) == key(&sym)) {
-            Some(other) if size(&sym) > size(other) => *other = sym,
-            Some(_) => {}
-            None => kept.push(sym),
+        match positions.entry(key(&sym)) {
+            Entry::Occupied(position) => {
+                let other = &mut kept[*position.get()];
+                if size(&sym) > size(other) {
+                    *other = sym;
+                }
+            }
+            Entry::Vacant(position) => {
+                position.insert(kept.len());
+                kept.push(sym);
+            }
         }
     }
     kept
@@ -151,21 +170,35 @@ fn one_per_module(dumped: Vec<Dumped>) -> Vec<Dumped> {
 /// Writes the `.sym` files of one input into `output`. A name that would land on a file this
 /// run already wrote, or that two architectures of the input share, goes in a folder named
 /// after its debug id instead, so the file keeps the name it has to be uploaded under.
+/// `written` maps each file written so far to the input it came from.
 fn dump_into(
     input: &Path,
+    companions: &Companions,
     output: &Path,
-    written: &mut Vec<String>,
+    written: &mut HashMap<PathBuf, PathBuf>,
 ) -> Result<Vec<Dumped>, String> {
-    dump(input, |sym| {
+    dump(input, companions, |sym| {
         // Compared in lowercase: macOS and Windows file names ignore case.
-        let name = sym.file_name.to_lowercase();
-        let taken = sym.shared || written.contains(&name);
-        written.push(name);
-        if taken {
-            output.join(sym.debug_id)
-        } else {
-            output.to_path_buf()
+        let key = |folder: &Path| {
+            PathBuf::from(folder.join(sym.file_name).to_string_lossy().to_lowercase())
+        };
+        let mut folder = output.to_path_buf();
+        if sym.shared || written.contains_key(&key(&folder)) {
+            folder.push(sym.debug_id);
         }
+        // Same name and same debug id: the same module from another input, such as a dSYM
+        // and the binary it belongs to. Replacing the first file could swap full symbols for
+        // a stripped binary's.
+        if let Some(earlier) = written.get(&key(&folder)) {
+            return Err(format!(
+                "{}: its {} would replace the one written from {}; convert them into different folders",
+                input.display(),
+                sym.file_name,
+                earlier.display()
+            ));
+        }
+        written.insert(key(&folder), input.to_path_buf());
+        Ok(folder)
     })
 }
 
@@ -178,8 +211,15 @@ struct Pending<'a> {
 }
 
 #[cfg(feature = "dump-syms")]
-fn dump(input: &Path, mut folder: impl FnMut(Pending) -> PathBuf) -> Result<Vec<Dumped>, String> {
-    let all = bugsplat_dumpsyms::read(input).map_err(|error| error.to_string())?;
+type Companions = bugsplat_dumpsyms::Companions;
+
+#[cfg(feature = "dump-syms")]
+fn dump(
+    input: &Path,
+    companions: &Companions,
+    mut folder: impl FnMut(Pending) -> Result<PathBuf, String>,
+) -> Result<Vec<Dumped>, String> {
+    let all = bugsplat_dumpsyms::read_with(input, companions).map_err(|error| error.to_string())?;
     let mut dumped = Vec::new();
     for symbols in &all {
         let same_name = |other: &&bugsplat_dumpsyms::Symbols| {
@@ -189,7 +229,7 @@ fn dump(input: &Path, mut folder: impl FnMut(Pending) -> PathBuf) -> Result<Vec<
             file_name: &symbols.file_name,
             debug_id: &symbols.module.debug_id,
             shared: all.iter().filter(same_name).count() > 1,
-        });
+        })?;
         let path = symbols
             .write_to(&folder)
             .map_err(|error| error.to_string())?;
@@ -212,7 +252,21 @@ fn dump(input: &Path, mut folder: impl FnMut(Pending) -> PathBuf) -> Result<Vec<
 }
 
 #[cfg(not(feature = "dump-syms"))]
-fn dump(_: &Path, _: impl FnMut(Pending) -> PathBuf) -> Result<Vec<Dumped>, String> {
+struct Companions;
+
+#[cfg(not(feature = "dump-syms"))]
+impl Companions {
+    fn new(_: &[PathBuf]) -> Self {
+        Self
+    }
+}
+
+#[cfg(not(feature = "dump-syms"))]
+fn dump(
+    _: &Path,
+    _: &Companions,
+    _: impl FnMut(Pending) -> Result<PathBuf, String>,
+) -> Result<Vec<Dumped>, String> {
     Err(UNAVAILABLE.to_string())
 }
 
@@ -237,4 +291,57 @@ fn file_name(path: &Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    fn sym(dir: &Path, folder: &str, name: &str, module: &str, os: &str, bytes: usize) -> Dumped {
+        let folder = dir.join(folder);
+        fs::create_dir_all(&folder).unwrap();
+        let path = folder.join(name);
+        fs::write(&path, vec![b'x'; bytes]).unwrap();
+        Dumped {
+            path,
+            source: PathBuf::from(folder.file_name().unwrap()),
+            module_name: module.to_string(),
+            debug_id: "ABC1".to_string(),
+            os: os.to_string(),
+            arch: "x86_64".to_string(),
+        }
+    }
+
+    fn sources(kept: &[Dumped]) -> Vec<String> {
+        kept.iter()
+            .map(|sym| sym.source.display().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn the_larger_sym_file_of_a_module_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir = dir.path();
+        let kept = one_per_module(vec![
+            sym(dir, "1", "App.sym", "App.pdb", "windows", 10),
+            sym(dir, "2", "other.sym", "other.pdb", "windows", 5),
+            sym(dir, "3", "app.sym", "app.pdb", "windows", 20),
+            sym(dir, "4", "App.sym", "App.pdb", "windows", 20),
+        ]);
+        assert_eq!(sources(&kept), ["3", "2"]);
+    }
+
+    #[test]
+    fn only_windows_modules_are_matched_whatever_the_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir = dir.path();
+        let kept = one_per_module(vec![
+            sym(dir, "1", "libFoo.so.sym", "libFoo.so", "Linux", 10),
+            sym(dir, "2", "libfoo.so.sym", "libfoo.so", "Linux", 20),
+            sym(dir, "3", "libfoo.so.sym", "libfoo.so", "Linux", 30),
+        ]);
+        assert_eq!(sources(&kept), ["1", "3"]);
+    }
 }

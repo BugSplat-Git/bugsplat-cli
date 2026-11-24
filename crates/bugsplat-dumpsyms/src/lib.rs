@@ -4,15 +4,17 @@
 //! [`read`] turns a file or a `.dSYM` bundle into [`Symbols`], one per architecture, and
 //! [`Symbols::write_to`] writes the `.sym` file under the name `symbol-upload --dumpSyms`
 //! gives it. Nothing here uses the network: `dump_syms` is built without its `http` feature,
-//! which is the only part of it that talks to symbol servers.
+//! which is the only part of it that talks to symbol servers, and a PDB path recorded in a
+//! binary is only followed on a local drive.
 
 mod name;
 
+use std::collections::HashMap;
 use std::fmt::{self, Write as _};
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf, Prefix};
 
 use dump_syms::object_info::ObjectInfo;
 use dump_syms::platform::Platform;
@@ -91,6 +93,32 @@ impl Symbols {
     }
 }
 
+/// Files being converted together, by name. A PE file's PDB and a PDB's binary are looked for
+/// among them as well as next to the file, so the two halves of a module pair up when a
+/// build keeps them in different folders.
+#[derive(Debug, Default)]
+pub struct Companions(HashMap<String, Vec<PathBuf>>);
+
+impl Companions {
+    pub fn new(paths: &[PathBuf]) -> Self {
+        let mut by_name: HashMap<String, Vec<PathBuf>> = HashMap::new();
+        for path in paths {
+            by_name
+                .entry(file_name(path).to_lowercase())
+                .or_default()
+                .push(path.clone());
+        }
+        Self(by_name)
+    }
+
+    /// Windows file names ignore case.
+    fn named(&self, name: &str) -> &[PathBuf] {
+        self.0
+            .get(&name.to_lowercase())
+            .map_or(&[], |paths| paths.as_slice())
+    }
+}
+
 /// The symbols in `path`: an ELF, Mach-O, PE or PDB file, or a `.dSYM` bundle.
 ///
 /// A fat Mach-O file yields one [`Symbols`] per architecture, and a bundle one per
@@ -98,14 +126,19 @@ impl Symbols {
 /// with its PDB, and a PDB with its `.dll` or `.exe`, when the other file is found on disk
 /// with the same debug id; the PE half is where the unwind data (`STACK CFI`) comes from.
 pub fn read(path: &Path) -> Result<Vec<Symbols>> {
-    let metadata = fs::metadata(path).map_err(|source| io_error(path, source))?;
-    if metadata.is_dir() {
-        return read_dsym(path);
-    }
-    read_file(path)
+    read_with(path, &Companions::default())
 }
 
-fn read_dsym(bundle: &Path) -> Result<Vec<Symbols>> {
+/// [`read`], also looking for the other half of a PE and PDB pair among `companions`.
+pub fn read_with(path: &Path, companions: &Companions) -> Result<Vec<Symbols>> {
+    let metadata = fs::metadata(path).map_err(|source| io_error(path, source))?;
+    if metadata.is_dir() {
+        return read_dsym(path, companions);
+    }
+    read_file(path, companions)
+}
+
+fn read_dsym(bundle: &Path, companions: &Companions) -> Result<Vec<Symbols>> {
     let is_dsym = bundle
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("dsym"));
@@ -123,7 +156,7 @@ fn read_dsym(bundle: &Path) -> Result<Vec<Symbols>> {
 
     let mut symbols = Vec::new();
     for file in &files {
-        match read_file(file) {
+        match read_file(file, companions) {
             Ok(found) => symbols.extend(found),
             Err(Error::Unsupported(_)) => {}
             Err(error) => return Err(error),
@@ -135,14 +168,14 @@ fn read_dsym(bundle: &Path) -> Result<Vec<Symbols>> {
     Ok(symbols)
 }
 
-fn read_file(path: &Path) -> Result<Vec<Symbols>> {
+fn read_file(path: &Path, companions: &Companions) -> Result<Vec<Symbols>> {
     let view = ByteView::open(path).map_err(|source| io_error(path, source))?;
     let failed = |reason: String| Error::Failed {
         path: path.to_path_buf(),
         reason,
     };
     // dump_syms and the parsers under it panic on some malformed files.
-    let infos = catch_unwind(AssertUnwindSafe(|| object_infos(path, &view)))
+    let infos = catch_unwind(AssertUnwindSafe(|| object_infos(path, &view, companions)))
         .map_err(|panic| failed(panic_message(panic.as_ref())))?
         .map_err(|error| failed(format!("{error:#}")))?;
     if infos.is_empty() {
@@ -164,7 +197,11 @@ fn read_file(path: &Path) -> Result<Vec<Symbols>> {
 }
 
 /// Empty when the file is not a kind `dump_syms` converts.
-fn object_infos(path: &Path, data: &[u8]) -> anyhow::Result<Vec<ObjectInfo>> {
+fn object_infos(
+    path: &Path,
+    data: &[u8],
+    companions: &Companions,
+) -> anyhow::Result<Vec<ObjectInfo>> {
     let name = file_name(path);
     // Inline records are left out, as node-dump-syms leaves them out.
     let inlines = false;
@@ -194,7 +231,7 @@ fn object_infos(path: &Path, data: &[u8]) -> anyhow::Result<Vec<ObjectInfo>> {
         }
         FileFormat::Pe => {
             let pe = PeObject::parse(data)?;
-            match find_pdb(path, &pe) {
+            match find_pdb(path, &pe, companions) {
                 Some((pdb_name, pdb_view)) => vec![ObjectInfo::from_pdb(
                     PdbObject::parse(&pdb_view)?,
                     &pdb_name,
@@ -208,7 +245,7 @@ fn object_infos(path: &Path, data: &[u8]) -> anyhow::Result<Vec<ObjectInfo>> {
         }
         FileFormat::Pdb => {
             let pdb = PdbObject::parse(data)?;
-            let pe = find_pe(path, &pdb);
+            let pe = find_pe(path, &pdb, companions);
             let pe_object = match &pe {
                 Some((_, view)) => Some(PeObject::parse(view)?),
                 None => None,
@@ -227,32 +264,63 @@ fn object_infos(path: &Path, data: &[u8]) -> anyhow::Result<Vec<ObjectInfo>> {
 }
 
 /// The PDB a PE file names in its debug directory: at the recorded path, which is where the
-/// linker wrote it on the build machine, or next to the PE file. One with another debug id
-/// belongs to a different build and is ignored.
-fn find_pdb(pe_path: &Path, pe: &PeObject) -> Option<(String, ByteView<'static>)> {
+/// linker wrote it on the build machine, next to the PE file, or among `companions`. One
+/// with another debug id belongs to a different build and is ignored.
+fn find_pdb(
+    pe_path: &Path,
+    pe: &PeObject,
+    companions: &Companions,
+) -> Option<(String, ByteView<'static>)> {
     let recorded = pe.debug_file_name()?;
     let recorded = if cfg!(windows) {
         recorded.into_owned()
     } else {
         recorded.replace('\\', "/")
     };
-    let name = Path::new(&recorded).file_name()?.to_str()?.to_string();
-    [PathBuf::from(&recorded), pe_path.with_file_name(&name)]
+    let recorded = Path::new(&recorded);
+    let name = recorded.file_name()?.to_str()?.to_string();
+    let matches = |view: &ByteView| {
+        PdbObject::test(view)
+            && PdbObject::parse(view).is_ok_and(|pdb| pdb.debug_id() == pe.debug_id())
+    };
+    is_on_local_drive(recorded)
+        .then(|| recorded.to_path_buf())
         .into_iter()
+        .chain([pe_path.with_file_name(&name)])
+        .chain(companions.named(&name).iter().cloned())
         .filter(|candidate| candidate.is_file())
         .filter_map(|candidate| ByteView::open(candidate).ok())
-        .find(|view| {
-            PdbObject::test(view)
-                && PdbObject::parse(view).is_ok_and(|pdb| pdb.debug_id() == pe.debug_id())
-        })
+        .find(matches)
         .map(|view| (name, view))
 }
 
-/// The `.dll` or `.exe` next to a PDB with the PDB's name and debug id.
-fn find_pe(pdb_path: &Path, pdb: &PdbObject) -> Option<(String, ByteView<'static>)> {
-    ["dll", "exe"]
+/// The recorded path comes from inside the file being converted. On Windows, asking whether
+/// `\\host\share\app.pdb` exists signs in to `host` with the user's credentials, so
+/// only a path on a drive letter is followed.
+fn is_on_local_drive(path: &Path) -> bool {
+    match path.components().next() {
+        Some(Component::Prefix(prefix)) => {
+            matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))
+        }
+        _ => true,
+    }
+}
+
+/// The `.dll` or `.exe` with a PDB's name and debug id, next to it or among `companions`.
+fn find_pe(
+    pdb_path: &Path,
+    pdb: &PdbObject,
+    companions: &Companions,
+) -> Option<(String, ByteView<'static>)> {
+    let adjacent = ["dll", "exe"]
         .into_iter()
-        .map(|extension| pdb_path.with_extension(extension))
+        .map(|extension| pdb_path.with_extension(extension));
+    let selected: Vec<PathBuf> = adjacent
+        .clone()
+        .flat_map(|candidate| companions.named(&file_name(&candidate)).to_vec())
+        .collect();
+    adjacent
+        .chain(selected)
         .filter(|candidate| candidate.is_file())
         .find_map(|candidate| {
             let view = ByteView::open(&candidate).ok()?;
@@ -315,4 +383,52 @@ fn file_name(path: &Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_recorded_pdb_path_is_followed_only_on_a_local_drive() {
+        for path in ["app.pdb", "build/app.pdb", "/build/app.pdb", "../app.pdb"] {
+            assert!(is_on_local_drive(Path::new(path)), "{path}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_recorded_pdb_path_on_a_network_share_is_not_followed() {
+        for path in [
+            r"C:\build\app.pdb",
+            r"d:app.pdb",
+            r"\build\app.pdb",
+            r"\\?\C:\build\app.pdb",
+        ] {
+            assert!(is_on_local_drive(Path::new(path)), "{path}");
+        }
+        for path in [
+            r"\\host\share\app.pdb",
+            "//host/share/app.pdb",
+            r"\\?\UNC\host\share\app.pdb",
+            r"\\.\pipe\app.pdb",
+        ] {
+            assert!(!is_on_local_drive(Path::new(path)), "{path}");
+        }
+    }
+
+    #[test]
+    fn companions_are_found_by_name_whatever_the_case() {
+        let companions = Companions::new(&[
+            PathBuf::from("bin").join("App.dll"),
+            PathBuf::from("other").join("app.DLL"),
+            PathBuf::from("pdb").join("app.pdb"),
+        ]);
+        assert_eq!(companions.named("APP.dll").len(), 2);
+        assert_eq!(
+            companions.named("app.pdb"),
+            [PathBuf::from("pdb").join("app.pdb")]
+        );
+        assert!(companions.named("app.exe").is_empty());
+    }
 }

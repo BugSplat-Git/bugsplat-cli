@@ -22,6 +22,7 @@ import urllib.parse
 import urllib.request
 
 REDIRECT = "http://127.0.0.1:33418/callback"
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -34,15 +35,21 @@ def main():
         sys.exit("usage: localstack-token.py EMAIL PASSWORD [API_URL]")
     email, password = sys.argv[1], sys.argv[2]
     base = (sys.argv[3] if len(sys.argv) == 4 else "http://localhost:8085").rstrip("/")
-    host = urllib.parse.urlparse(base).hostname
-    if host not in ("localhost", "127.0.0.1", "::1"):
-        sys.exit("refusing to post a password to a host that is not this machine")
+
+    def require_local(url):
+        parts = urllib.parse.urlparse(url)
+        if parts.scheme not in ("http", "https") or parts.hostname not in LOCAL_HOSTS:
+            sys.exit(f"refusing to send a request to {parts.scheme}://{parts.hostname}: not this machine")
+
+    require_local(base)
 
     opener = urllib.request.build_opener(
         NoRedirect, urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
     )
 
+    # Discovery documents and redirects name their own URLs, so check every one.
     def request(url, data=None, as_json=False):
+        require_local(url)
         headers = {}
         if data is not None:
             if as_json:

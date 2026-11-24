@@ -21,7 +21,7 @@ pub struct Cli {
     pub command: Command,
 }
 
-#[derive(Debug, Args)]
+#[derive(Args)]
 pub struct GlobalArgs {
     /// BugSplat database. Defaults to your default database for commands that read crash data.
     #[arg(
@@ -73,6 +73,21 @@ pub struct GlobalArgs {
     pub verbose: bool,
 }
 
+// Not derived: the client secret must never be printed.
+impl std::fmt::Debug for GlobalArgs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GlobalArgs")
+            .field("database", &self.database)
+            .field("api_url", &self.api_url)
+            .field("client_id", &self.client_id)
+            .field("client_secret", &self.client_secret.as_ref().map(|_| "***"))
+            .field("json", &self.json)
+            .field("quiet", &self.quiet)
+            .field("verbose", &self.verbose)
+            .finish()
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Sign in to BugSplat in your browser
@@ -117,5 +132,15 @@ mod tests {
     #[test]
     fn command_tree_is_consistent() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn debug_hides_the_client_secret() {
+        use clap::Parser;
+
+        let cli = Cli::parse_from(["bugsplat", "--client-secret", "hunter2", "whoami"]);
+        let printed = format!("{cli:?}");
+        assert!(!printed.contains("hunter2"), "{printed}");
+        assert!(printed.contains("***"));
     }
 }

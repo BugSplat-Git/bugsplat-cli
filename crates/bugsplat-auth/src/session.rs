@@ -120,6 +120,13 @@ impl Sessions {
         blocking(move || store.delete(&api_url)).await
     }
 
+    /// Deletes the session while holding the refresh lock, so a refresh that is in flight
+    /// can't store a new session after sign-out has returned.
+    pub(crate) async fn sign_out(&self) -> Result<()> {
+        let _lock = self.lock().await?;
+        self.delete().await
+    }
+
     pub(crate) fn client_id(&self) -> Option<String> {
         clients::load(&self.config_dir, &self.api_url)
     }

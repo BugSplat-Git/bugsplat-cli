@@ -147,7 +147,7 @@ fn present(url: &Url, options: &LoginOptions) {
 
 /// Deletes the stored session for `config.api_url`, if there is one.
 pub async fn logout(config: &Config) -> Result<()> {
-    Sessions::from_env(config)?.delete().await
+    Sessions::from_env(config)?.sign_out().await
 }
 
 /// Who [`access_token`] would authenticate as, checked against the server where that

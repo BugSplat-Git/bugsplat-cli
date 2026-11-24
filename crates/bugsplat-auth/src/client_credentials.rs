@@ -32,6 +32,15 @@ type CacheKey = (String, String, [u8; 32]);
 static CACHE: LazyLock<Mutex<HashMap<CacheKey, (String, Instant)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+// Upload workers that all find the token expired must not each ask for a new one.
+static ACQUIRING: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
+
+fn cached(key: &CacheKey) -> Option<String> {
+    let cache = CACHE.lock().unwrap();
+    let (token, expires) = cache.get(key)?;
+    (Instant::now() < *expires).then(|| token.clone())
+}
+
 impl<'a> ClientCredentials<'a> {
     pub(crate) fn from_config(config: &'a Config) -> Result<Option<Self>> {
         let set = |value: &'a Option<String>| value.as_deref().filter(|v| !v.is_empty());
@@ -50,10 +59,12 @@ impl<'a> ClientCredentials<'a> {
             self.id.to_string(),
             Sha256::digest(self.secret.as_bytes()).into(),
         );
-        if let Some((token, expires)) = CACHE.lock().unwrap().get(&key)
-            && Instant::now() < *expires
-        {
-            return Ok(token.clone());
+        if let Some(token) = cached(&key) {
+            return Ok(token);
+        }
+        let _acquiring = ACQUIRING.lock().await;
+        if let Some(token) = cached(&key) {
+            return Ok(token);
         }
 
         let response = http

@@ -869,6 +869,57 @@ async fn the_email_comes_from_the_token_response_or_the_access_token() {
 }
 
 #[tokio::test]
+async fn logout_during_a_refresh_leaves_no_session() {
+    let fixture = Fixture::new().await;
+    fixture.store("access-1", -10).await;
+    fixture
+        .refresh_request("refresh-1")
+        .respond_with(rotated_tokens().set_delay(Duration::from_millis(300)))
+        .mount(&fixture.server)
+        .await;
+
+    let sign_out = async {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        fixture.sessions.sign_out().await
+    };
+    let (token, signed_out) = tokio::join!(fixture.access_token(None), sign_out);
+
+    assert_eq!(token.unwrap().secret, "access-2");
+    signed_out.unwrap();
+    assert!(fixture.stored().await.is_none());
+}
+
+#[tokio::test]
+async fn client_credentials_requested_at_the_same_time_are_exchanged_once() {
+    let fixture = Fixture::new().await.with_client_credentials();
+    Mock::given(method("POST"))
+        .and(path("/oauth2/authorize"))
+        .and(body_string_contains("grant_type=client_credentials"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "token_type": "Bearer",
+                    "expires_in": 86400,
+                    "access_token": "ci-token",
+                }))
+                .set_delay(Duration::from_millis(200)),
+        )
+        .expect(1)
+        .mount(&fixture.server)
+        .await;
+
+    let (a, b, c) = tokio::join!(
+        fixture.access_token(None),
+        fixture.access_token(None),
+        fixture.access_token(None)
+    );
+
+    for token in [a, b, c] {
+        assert_eq!(token.unwrap().secret, "ci-token");
+    }
+}
+
+#[tokio::test]
 async fn logout_deletes_the_session() {
     let fixture = Fixture::new().await;
     fixture.store("access-1", 3600).await;

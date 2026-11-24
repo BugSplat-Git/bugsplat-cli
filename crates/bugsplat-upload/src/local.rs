@@ -1,6 +1,6 @@
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use bugsplat_core::Result;
 use serde::Serialize;
@@ -72,8 +72,13 @@ pub fn copy_to_local(files: &[SymbolFile], local_path: &Path) -> Result<LocalCop
         let folder = local_path.join(&file.module_name).join(&file.debug_id);
         fs::create_dir_all(&folder)?;
         let destination = folder.join(&file.name);
+        // Through a temporary file: when the search includes the store itself, a file is
+        // its own destination, and creating it in place would empty it before it is read.
         let mut reader = compress::open(&file.path, file.slice)?;
-        copy.bytes += io::copy(&mut reader, &mut fs::File::create(&destination)?)?;
+        let mut staged = tempfile::NamedTempFile::new_in(&folder)?;
+        copy.bytes += io::copy(&mut reader, &mut staged)?;
+        drop(reader);
+        staged.persist(&destination).map_err(|error| error.error)?;
         copy.copied += 1;
         copy.files.push(LocalFile {
             file: file.clone(),
@@ -87,8 +92,14 @@ pub fn copy_to_local(files: &[SymbolFile], local_path: &Path) -> Result<LocalCop
     Ok(copy)
 }
 
+// One ordinary path component. On Windows that also rules out a drive-relative name
+// such as `C:outside.so`, which would leave the store when joined to it.
 fn is_plain_name(name: &str) -> bool {
-    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\'])
+    !name.contains(['/', '\\'])
+        && matches!(
+            Path::new(name).components().collect::<Vec<_>>().as_slice(),
+            [Component::Normal(_)]
+        )
 }
 
 #[cfg(test)]
@@ -137,6 +148,42 @@ mod tests {
         assert_eq!(fs::read_to_string(store.join("index.txt")).unwrap(), ".");
         assert_eq!(copy.files[1].destination, None);
         assert_eq!(copy.files[1].file.route, Route::Skip);
+    }
+
+    #[test]
+    fn a_file_already_in_the_store_keeps_its_contents() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = dir.path().join("store");
+        let folder = store.join("app.pdb").join("ABC1");
+        fs::create_dir_all(&folder).unwrap();
+        let pdb = folder.join("app.pdb");
+        fs::write(&pdb, b"pdb bytes").unwrap();
+
+        let copy = copy_to_local(
+            &[file(&pdb, "app.pdb", "ABC1", Route::SymbolServer)],
+            &store,
+        )
+        .unwrap();
+
+        assert_eq!((copy.copied, copy.bytes), (1, 9));
+        assert_eq!(fs::read(&pdb).unwrap(), b"pdb bytes");
+        assert_eq!(fs::read_dir(&folder).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn only_a_single_ordinary_component_is_a_plain_name() {
+        for name in ["app.pdb", "Electron Helper (GPU)", "libc++_shared.so"] {
+            assert!(is_plain_name(name), "{name}");
+        }
+        for name in ["", ".", "..", "a/b", "a\\b", "/abs", "../up"] {
+            assert!(!is_plain_name(name), "{name}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_drive_relative_name_is_not_a_plain_name() {
+        assert!(!is_plain_name("C:outside.so"));
     }
 
     #[test]

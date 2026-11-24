@@ -17,6 +17,12 @@ fn bugsplat() -> Command {
     ] {
         command.env_remove(name);
     }
+    // Keep the developer's real session and keychain out of test runs.
+    command.env("BUGSPLAT_TOKEN_STORE", "file");
+    command.env(
+        "BUGSPLAT_CONFIG_DIR",
+        std::env::temp_dir().join("bugsplat-cli-tests"),
+    );
     command
 }
 

@@ -814,9 +814,10 @@ async fn one_429_pauses_every_worker() {
         .iter()
         .filter(|(_, at)| at.duration_since(rate_limited_at) >= pause - Duration::from_millis(20))
         .count();
-    assert_eq!(
-        after_pause, 5,
-        "everything else waited for the pause to end"
+    // Six when a slow machine starts the second worker's first request after the pause.
+    assert!(
+        after_pause >= 5,
+        "everything else waited for the pause to end: {after_pause} of 7 requests came after it"
     );
 
     let events = events.lock().unwrap();

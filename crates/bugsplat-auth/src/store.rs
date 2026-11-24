@@ -87,8 +87,11 @@ pub(crate) fn create_private_dir(dir: &Path) -> std::io::Result<()> {
 
 /// Writes through a temporary file so a reader never sees half a session.
 pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let tmp = path.with_extension("tmp");
-    let _ = fs::remove_file(&tmp);
+    // A name of its own per write: two commands writing at once must not share, or
+    // delete, each other's temporary file.
+    static WRITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let unique = WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = path.with_extension(format!("{}-{unique}.tmp", std::process::id()));
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -96,10 +99,15 @@ pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(&tmp)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    fs::rename(&tmp, path)
+    let written = options.open(&tmp).and_then(|mut file| {
+        file.write_all(bytes)?;
+        file.sync_all()
+    });
+    let result = written.and_then(|()| fs::rename(&tmp, path));
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
 }
 
 pub(crate) struct FileStore {

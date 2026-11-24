@@ -20,6 +20,7 @@ All four checks must pass before a pull request.
 - `crates/bugsplat-core`: `Config`, `Error` (with exit codes), the HTTP client.
 - `crates/bugsplat-auth`: `access_token(&Config)` is the only way any crate gets a bearer token.
 - `crates/bugsplat-mcp-client`: client for the hosted MCP server; the remote verbs call its tools.
+- `crates/bugsplat-mcp-server`: `bugsplat mcp`, a local MCP server over stdio with the symbol tools the hosted server can't have. Nothing but protocol messages may go to stdout while it runs.
 - `crates/bugsplat-debugid`: `read(path)` returns debug ids; they must match BugSplat's npm packages (`pdb-guid`, `macho-uuid`, `elfy`, `symbol-upload`).
 - `crates/bugsplat-symbols`: find symbol files on disk. `crates/bugsplat-upload`: upload and delete.
 

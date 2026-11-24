@@ -16,6 +16,7 @@ bugsplat-auth = { path = "crates/bugsplat-auth" }
 bugsplat-core = { path = "crates/bugsplat-core" }
 bugsplat-debugid = { path = "crates/bugsplat-debugid" }
 bugsplat-mcp-client = { path = "crates/bugsplat-mcp-client" }
+bugsplat-mcp-server = { path = "crates/bugsplat-mcp-server" }
 bugsplat-symbols = { path = "crates/bugsplat-symbols" }
 bugsplat-upload = { path = "crates/bugsplat-upload" }
 

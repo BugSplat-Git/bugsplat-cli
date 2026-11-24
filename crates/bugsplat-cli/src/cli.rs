@@ -10,7 +10,7 @@ use crate::commands::{
 #[derive(Debug, Parser)]
 #[command(
     name = "bugsplat",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("BUGSPLAT_BUILD_TARGET"), ")"),
     about = "Read BugSplat crash data, find the symbol files a crash needs, and upload them."
 )]
 pub struct Cli {

@@ -43,7 +43,7 @@ A machine without Node.js can use the archive for its platform from the GitHub R
 
 The "Build release artifacts" workflow (`.github/workflows/build-artifacts.yml`) builds everything in the table above and keeps the files as workflow artifacts for seven days. It never creates a tag, a GitHub Release, or a package. The workflow also:
 
-- runs `.github/scripts/smoke-test.sh` on each binary on a runner of its own platform: `bugsplat --version`, `bugsplat symbols info` on committed PDB, PE, ELF and dSYM fixtures, and `whoami` and `logout` against a session in the file token store. On the runner, the script also checks the operating system's credential store: that the macOS keychain and the Windows Credential Manager answer, and that a Linux machine with no Secret Service falls back to the file;
+- runs `.github/scripts/smoke-test.sh` on each binary on a runner of its own platform: `bugsplat --version`, `bugsplat symbols info` on committed PDB, PE, ELF and dSYM fixtures, and `whoami` and `logout` against a session in the file token store. On the runner, the script also checks the operating system's credential store: that the macOS keychain and the Windows Credential Manager answer, and that `whoami` and `logout` use the session file on a Linux machine with no Secret Service. Storing a session needs `bugsplat login`, so the script does not cover it;
 - installs the generated npm package into a temporary project with `.github/scripts/npm-package-test.sh` and runs `bugsplat --version` through it. The script points the package's download URL at the archives the run just built, because the GitHub Release does not exist yet.
 
 The workflow runs only when you start it:

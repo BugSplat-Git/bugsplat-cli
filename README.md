@@ -58,7 +58,7 @@ These options work with every command:
 | --- | --- | --- |
 | `--database`, `-b` | `BUGSPLAT_DATABASE` | The BugSplat database to use |
 | `--api-url` | `BUGSPLAT_API_URL`, `BUGSPLAT_HOST` | Base URL of the BugSplat API |
-| `--json` | | Print JSON for scripts. The default output is plain text. |
+| `--json` | | Print JSON for scripts. The default output is plain text. For the commands that read crash data, `--json` asks the server's tool for `format: "json"` and prints the document it returns. |
 | `--quiet` | | Print only results and errors |
 | `--verbose` | | Print more detail about what the command is doing |
 

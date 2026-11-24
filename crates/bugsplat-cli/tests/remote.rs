@@ -75,6 +75,7 @@ fn tools() -> Value {
                 "properties": {
                     "id": {"type": "integer", "description": "Crash report id"},
                     "database": {"type": "string", "description": "Database to read"},
+                    "format": {"type": "string", "enum": ["text", "json"]},
                 },
                 "required": ["id"],
             },
@@ -719,6 +720,59 @@ async fn json_output_wraps_text_when_there_is_no_structured_content() {
     assert_eq!(run.code, 0, "{}", run.stderr);
     let printed: Value = serde_json::from_str(&run.stdout).unwrap();
     assert_eq!(printed, json!({"text": "Group #7\nCrashes: 3"}));
+}
+
+/// Answers `tools/call` the way a tool with a `format` argument does.
+fn report_in_either_format(request: &Request) -> ResponseTemplate {
+    if body(request)["params"]["arguments"]["format"] == "json" {
+        text_result(request, r#"{"id": 42, "application": "MyGame"}"#)
+    } else {
+        text_result(request, "Crash #42\nApplication: MyGame")
+    }
+}
+
+#[tokio::test]
+async fn json_output_asks_a_tool_that_takes_a_format_for_json() {
+    let server = server_with(report_in_either_format).await;
+    let run = bugsplat(&server, &["reports", "get", "42", "--json"]).await;
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let printed: Value = serde_json::from_str(&run.stdout).unwrap();
+    assert_eq!(printed, json!({"id": 42, "application": "MyGame"}));
+    let calls = requests(&server, "tools/call").await;
+    assert_eq!(
+        body(&calls[0])["params"]["arguments"],
+        json!({"id": 42, "format": "json"})
+    );
+
+    let run = bugsplat(&server, &["reports", "get", "42"]).await;
+    assert_eq!(run.stdout, "Crash #42\nApplication: MyGame\n");
+    let calls = requests(&server, "tools/call").await;
+    assert_eq!(body(&calls[1])["params"]["arguments"], json!({"id": 42}));
+}
+
+#[tokio::test]
+async fn tool_call_asks_for_json_unless_a_format_is_given() {
+    let server = server_with(report_in_either_format).await;
+    let run = bugsplat(&server, &["--json", "tool", "call", "get-report", "id=42"]).await;
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let printed: Value = serde_json::from_str(&run.stdout).unwrap();
+    assert_eq!(printed, json!({"id": 42, "application": "MyGame"}));
+
+    let run = bugsplat(
+        &server,
+        &[
+            "--json",
+            "tool",
+            "call",
+            "get-report",
+            "id=42",
+            "format=text",
+        ],
+    )
+    .await;
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let printed: Value = serde_json::from_str(&run.stdout).unwrap();
+    assert_eq!(printed, json!({"text": "Crash #42\nApplication: MyGame"}));
 }
 
 #[tokio::test]

@@ -135,6 +135,11 @@ async fn call_by_name(args: CallArgs, ctx: &Context) -> anyhow::Result<()> {
     {
         arguments.insert("database".to_string(), json!(database));
     }
+    if ctx.config.is_json() && schema.as_ref().is_some_and(takes_json_format) {
+        arguments
+            .entry("format".to_string())
+            .or_insert_with(|| json!("json"));
+    }
     call_with(ctx, client, &args.name, arguments).await
 }
 
@@ -330,15 +335,39 @@ pub(crate) async fn connect(ctx: &Context) -> anyhow::Result<McpClient> {
     Ok(McpClient::connect(ctx.config.mcp_url(), &token.secret).await?)
 }
 
-/// Calls `tool` and prints its result: the tool's text, or with `--json` its structured
-/// content, or `{"text": ...}` when the server sends none.
+/// Calls `tool` and prints its result: the tool's text, or with `--json` the JSON the tool
+/// returns when asked for `format: "json"`. A tool without that argument gets its
+/// structured content printed, or `{"text": ...}` when the server sends none.
 pub(crate) async fn call(
     ctx: &Context,
     tool: &str,
     arguments: ToolArguments,
 ) -> anyhow::Result<()> {
-    let client = connect(ctx).await?;
-    call_with(ctx, client, tool, arguments.into_map()).await
+    let mut client = connect(ctx).await?;
+    let mut arguments = arguments.into_map();
+    if ctx.config.is_json() {
+        let tools = match client.list_tools().await {
+            Ok(tools) => tools,
+            Err(error) => {
+                client.close().await;
+                return Err(error.into());
+            }
+        };
+        if tools
+            .iter()
+            .any(|listed| listed.name == tool && takes_json_format(&listed.input_schema))
+        {
+            arguments.insert("format".to_string(), json!("json"));
+        }
+    }
+    call_with(ctx, client, tool, arguments).await
+}
+
+fn takes_json_format(schema: &Value) -> bool {
+    schema
+        .pointer("/properties/format/enum")
+        .and_then(Value::as_array)
+        .is_some_and(|formats| formats.iter().any(|format| format == "json"))
 }
 
 async fn call_with(
@@ -347,6 +376,9 @@ async fn call_with(
     tool: &str,
     arguments: Map<String, Value>,
 ) -> anyhow::Result<()> {
+    let asked_for_json = arguments
+        .get("format")
+        .is_some_and(|format| format == "json");
     let arguments = Value::Object(arguments);
     if ctx.config.verbose {
         eprintln!(
@@ -356,10 +388,10 @@ async fn call_with(
     }
     let result = client.call_tool(tool, arguments).await;
     client.close().await;
-    print_result(ctx, result?)
+    print_result(ctx, result?, asked_for_json)
 }
 
-fn print_result(ctx: &Context, result: ToolResult) -> anyhow::Result<()> {
+fn print_result(ctx: &Context, result: ToolResult, asked_for_json: bool) -> anyhow::Result<()> {
     if result.is_error {
         let message = if result.text.is_empty() {
             "The tool failed without a message.".to_string()
@@ -369,15 +401,19 @@ fn print_result(ctx: &Context, result: ToolResult) -> anyhow::Result<()> {
         return Err(Error::api(None, message).into());
     }
     if ctx.config.is_json() {
-        return print_json(&json_output(result));
+        return print_json(&json_output(result, asked_for_json));
     }
     print_text(&result.text)
 }
 
-fn json_output(result: ToolResult) -> Value {
-    result
-        .structured
-        .unwrap_or_else(|| json!({"text": result.text}))
+fn json_output(result: ToolResult, asked_for_json: bool) -> Value {
+    if let Some(structured) = result.structured {
+        return structured;
+    }
+    if asked_for_json && let Ok(document) = serde_json::from_str::<Value>(&result.text) {
+        return document;
+    }
+    json!({"text": result.text})
 }
 
 fn print_text(text: &str) -> anyhow::Result<()> {
@@ -554,14 +590,47 @@ mod tests {
             is_error: false,
             raw: Value::Null,
         };
-        assert_eq!(json_output(text_only), json!({"text": "2 groups"}));
+        assert_eq!(json_output(text_only, false), json!({"text": "2 groups"}));
         let structured = ToolResult {
             text: "2 groups".into(),
             structured: Some(json!({"groups": []})),
             is_error: false,
             raw: Value::Null,
         };
-        assert_eq!(json_output(structured), json!({"groups": []}));
+        assert_eq!(json_output(structured, true), json!({"groups": []}));
+    }
+
+    #[test]
+    fn json_output_is_the_tools_json_document_when_it_was_asked_for() {
+        let result = |text: &str| ToolResult {
+            text: text.into(),
+            structured: None,
+            is_error: false,
+            raw: Value::Null,
+        };
+        assert_eq!(
+            json_output(result(r#"{"groups": [{"stackKeyId": 7}]}"#), true),
+            json!({"groups": [{"stackKeyId": 7}]})
+        );
+        assert_eq!(
+            json_output(result(r#"{"groups": []}"#), false),
+            json!({"text": r#"{"groups": []}"#})
+        );
+        assert_eq!(
+            json_output(result("Group #7"), true),
+            json!({"text": "Group #7"})
+        );
+    }
+
+    #[test]
+    fn a_tool_takes_the_json_format_when_its_schema_lists_it() {
+        assert!(takes_json_format(&json!({
+            "properties": {"format": {"type": "string", "enum": ["text", "json"]}}
+        })));
+        assert!(!takes_json_format(&json!({
+            "properties": {"format": {"type": "string", "enum": ["text"]}}
+        })));
+        assert!(!takes_json_format(&json!({"properties": {"database": {}}})));
     }
 
     #[test]

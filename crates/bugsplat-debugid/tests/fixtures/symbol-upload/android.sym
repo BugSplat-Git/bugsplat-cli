@@ -1,0 +1,8 @@
+MODULE Linux arm64 83AE77A7796BDF7DCE8CE3564B3B5D650 libc++_shared.so
+INFO CODE_ID A777AE836B797DDFCE8CE3564B3B5D6565A0AB08
+FILE 0 /Volumes/Android/buildbot/src/android/ndk-r25-release/out/darwin/android-ndk-r25b/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include/bits/fortify/stdio.h
+FILE 1 /Volumes/Android/buildbot/src/android/ndk-r25-release/out/darwin/android-ndk-r25b/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include/bits/fortify/string.h
+FILE 2 /Volumes/Android/buildbot/src/android/ndk-r25-release/toolchain/llvm-project/libcxx/../../../toolchain/llvm-project/libcxxabi/../libcxx/include/algorithm
+FILE 3 /Volumes/Android/buildbot/src/android/ndk-r25-release/toolchain/llvm-project/libcxx/../../../toolchain/llvm-project/libcxxabi/../libcxx/include/typeinfo
+FILE 4 /Volumes/Android/buildbot/src/android/ndk-r25-release/toolchain/llvm-project/libcxx/../../../toolchain/llvm-project/libcxxabi/src/abort_message.cpp
+FILE 5 /Volumes/Android/buildbot/src/android/ndk-r25-release/toolchain/llvm-project/libcxx/../../../toolchain/llvm-project/libcxxabi/src/cxa_aux_runtime.cpp

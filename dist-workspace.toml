@@ -6,7 +6,7 @@ cargo-dist-version = "0.34.0"
 # The workspace sets `publish = false` to keep crates off crates.io, which also hides them from dist.
 dist = true
 ci = "github"
-installers = ["shell", "powershell"]
+installers = ["shell", "powershell", "npm"]
 targets = [
     "aarch64-apple-darwin",
     "x86_64-apple-darwin",
@@ -16,22 +16,27 @@ targets = [
     "aarch64-pc-windows-msvc",
 ]
 checksum = "sha256"
+# Not dist's default .tar.xz: the npm package and the shell installer unpack with the system
+# `tar`, and slim container images (node:22-slim, for one) have no `xz`.
+unix-archive = ".tar.gz"
 # Release builds run only for `v*` version tags, never for pull requests. The namespace is also
-# why the generated workflow is named `v-release.yml`.
+# why the generated workflow is named `v-release.yml`. To build every target without a release,
+# run the "Build release artifacts" workflow (build-artifacts.yml) by hand.
 tag-namespace = "v"
 pr-run-mode = "skip"
 install-path = "~/.bugsplat/bin"
 # The updater downloads from GitHub Releases, which it can't do while the repository is private.
 install-updater = false
 
-# npm publishing as @bugsplat/cli, switched off until the first release. To switch it on:
-# add "npm" to `installers`, uncomment these lines and the setup-node pin below, add the
-# NPM_TOKEN secret, and run `dist generate`. npm is the primary installer; there is no Homebrew
-# tap. `brew install bugsplat` would need a formula accepted into homebrew-core, which is
-# possible once the repository is public and the CLI has releases.
-# npm-scope = "@bugsplat"
-# npm-package = "cli"
-# publish-jobs = ["npm"]
+# npm is the primary installer, as @bugsplat/cli. A release builds the package and attaches it
+# to the GitHub Release, and nothing sends it to npm until `publish-jobs = ["npm"]` is added
+# (RELEASING.md).
+npm-scope = "@bugsplat"
+npm-package = "cli"
+
+# macOS signing, switched off until the Developer ID certificate is in the repository's
+# secrets (RELEASING.md). Uncomment and run `dist generate`.
+# macos-sign = true
 
 # `dist generate` writes these commits into the release workflow. Dependabot skips that file
 # (.github/dependabot.yml) because dist refuses to release when it differs from what it generates.
@@ -40,4 +45,5 @@ install-updater = false
 "actions/upload-artifact" = "cf430e030ddbb5b0abf93d22962f4752f3646cd9" # v7.0.2
 "actions/download-artifact" = "9000827ccba6bdab643e8b6fd33ac0654aef8333" # v8.0.2
 "swatinem/rust-cache" = "d1527c8f67ef9af357290475d4af4b0fab8f12e0" # v2.9.3
+# Used by the npm publish job, once it is on.
 # "actions/setup-node" = "249970729cb0ef3589644e2896645e5dc5ba9c38" # v6.5.0

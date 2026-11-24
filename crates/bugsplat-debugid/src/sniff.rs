@@ -41,6 +41,7 @@ pub(crate) fn sniff(head: &[u8]) -> Option<Format> {
             let slices = u32::from_be_bytes(head.get(4..8)?.try_into().ok()?);
             (slices < 45).then_some(Format::MachOFat)
         }
+        [0xca, 0xfe, 0xba, 0xbf] => Some(Format::MachOFat),
         _ => None,
     }
 }

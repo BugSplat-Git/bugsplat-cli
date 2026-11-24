@@ -43,6 +43,12 @@ impl std::fmt::Debug for Client {
     }
 }
 
+// A transfer gets the usual request time plus time for its size at a floor of 16 KiB a
+// second: generous for a slow connection, and still an end for one that has stalled.
+fn transfer_timeout(size: u64) -> Duration {
+    bugsplat_core::REQUEST_TIMEOUT + Duration::from_secs(size / (16 * 1024))
+}
+
 pub(crate) struct Failure {
     pub error: Error,
     pub retry: Retry,
@@ -173,6 +179,7 @@ impl Client {
             .put(url)
             .header(CONTENT_TYPE, "application/octet-stream")
             .header(CONTENT_LENGTH, size)
+            .timeout(transfer_timeout(size))
             .body(body);
         if gzip {
             request = request.header(CONTENT_ENCODING, "gzip");
@@ -346,6 +353,16 @@ fn server_message(body: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_transfer_gets_time_for_its_size() {
+        let base = bugsplat_core::REQUEST_TIMEOUT;
+        assert_eq!(transfer_timeout(0), base);
+        assert_eq!(
+            transfer_timeout(1024 * 1024 * 1024),
+            base + Duration::from_secs(65536)
+        );
+    }
 
     #[test]
     fn debug_hides_the_token() {

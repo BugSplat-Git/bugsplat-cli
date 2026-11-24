@@ -263,6 +263,37 @@ mod bundles {
     }
 
     #[test]
+    fn a_fat64_file_gives_its_slice() {
+        let thin = dwarf();
+        let offset: u64 = 4096;
+        let mut fat = Vec::new();
+        fat.extend([0xca, 0xfe, 0xba, 0xbf]);
+        fat.extend(1u32.to_be_bytes());
+        fat.extend(0x0100_0007u32.to_be_bytes());
+        fat.extend(3u32.to_be_bytes());
+        fat.extend(offset.to_be_bytes());
+        fat.extend((thin.len() as u64).to_be_bytes());
+        fat.extend(12u32.to_be_bytes());
+        fat.extend(0u32.to_be_bytes());
+        fat.resize(offset as usize, 0);
+        fat.extend(&thin);
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(dir.path(), "universal64", &fat);
+
+        let objects = read(&path).unwrap();
+
+        assert_eq!(objects.len(), 1);
+        assert_eq!(objects[0].debug_id, "ac15902fba2e31c18b29da51e889b321");
+        assert_eq!(
+            objects[0].slice,
+            Some(Slice {
+                offset,
+                size: thin.len() as u64
+            })
+        );
+    }
+
+    #[test]
     fn the_dsym_copy_of_a_uuid_wins_over_a_larger_executable() {
         let dir = tempfile::tempdir().unwrap();
         let archive = dir.path().join("a.xcarchive");

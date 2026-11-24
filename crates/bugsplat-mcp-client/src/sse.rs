@@ -5,17 +5,36 @@
 pub(crate) struct SseParser {
     buffer: Vec<u8>,
     data: Vec<String>,
+    // The last line ended in CR; an LF that follows, even in the next chunk, belongs to it.
+    after_cr: bool,
 }
 
 impl SseParser {
-    /// The data of every event `chunk` completes.
+    /// The data of every event `chunk` completes. Lines end in CR, LF or CRLF.
     pub(crate) fn push(&mut self, chunk: &[u8]) -> Vec<String> {
         self.buffer.extend_from_slice(chunk);
         let mut events = Vec::new();
-        while let Some(end) = self.buffer.iter().position(|byte| *byte == b'\n') {
-            let line: Vec<u8> = self.buffer.drain(..=end).collect();
-            let line = String::from_utf8_lossy(&line);
-            let line = line.trim_end_matches(['\n', '\r']);
+        let mut start = 0;
+        loop {
+            if self.after_cr {
+                match self.buffer.get(start) {
+                    Some(b'\n') => start += 1,
+                    Some(_) => {}
+                    None => break,
+                }
+                self.after_cr = false;
+            }
+            let Some(length) = self.buffer[start..]
+                .iter()
+                .position(|byte| matches!(byte, b'\n' | b'\r'))
+            else {
+                break;
+            };
+            let end = start + length;
+            let line = String::from_utf8_lossy(&self.buffer[start..end]).into_owned();
+            self.after_cr = self.buffer[end] == b'\r';
+            start = end + 1;
+
             if line.is_empty() {
                 if !self.data.is_empty() {
                     events.push(self.data.join("\n"));
@@ -26,6 +45,7 @@ impl SseParser {
                     .push(value.strip_prefix(' ').unwrap_or(value).to_string());
             }
         }
+        self.buffer.drain(..start);
         events
     }
 
@@ -71,6 +91,25 @@ mod tests {
         let mut parser = SseParser::default();
         assert!(parser.push(b"data: {}").is_empty());
         assert_eq!(parser.finish(), vec!["{}"]);
+    }
+
+    #[test]
+    fn bare_carriage_returns_end_lines_and_events() {
+        let mut parser = SseParser::default();
+        assert_eq!(parser.push(b"data: {\"a\":1}\r\r"), vec!["{\"a\":1}"]);
+        assert_eq!(
+            parser.push(b"data: {\"b\":2}\rdata: x\r\r"),
+            vec!["{\"b\":2}\nx"]
+        );
+    }
+
+    #[test]
+    fn a_crlf_split_across_chunks_is_one_line_ending() {
+        let mut parser = SseParser::default();
+        assert!(parser.push(b"data: {}\r").is_empty());
+        assert_eq!(parser.push(b"\n\r"), vec!["{}"]);
+        assert!(parser.push(b"\ndata: 1\r\n").is_empty());
+        assert_eq!(parser.push(b"\r\n"), vec!["1"]);
     }
 
     #[test]

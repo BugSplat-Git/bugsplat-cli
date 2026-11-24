@@ -28,6 +28,9 @@ pub use crate::store::TOKEN_STORE_ENV;
 /// For development and tests; `scripts/localstack-token.py` prints one for LocalStack.
 pub const ACCESS_TOKEN_ENV: &str = "BUGSPLAT_ACCESS_TOKEN";
 
+// Sign-in requests are small, and a refresh holds the session lock while it waits.
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TokenSource {
@@ -87,7 +90,7 @@ fn env_token() -> Option<String> {
 /// `BUGSPLAT_ACCESS_TOKEN` comes first, then a Client ID and Client Secret, then the
 /// session `bugsplat login` stored.
 pub async fn access_token(config: &Config) -> Result<AccessToken> {
-    let http = bugsplat_core::http_client()?;
+    let http = bugsplat_core::http_client_with_timeout(REQUEST_TIMEOUT)?;
     resolve(config, &http, env_token(), Sessions::from_env).await
 }
 
@@ -122,7 +125,7 @@ async fn resolve(
 
 /// Signs in through the browser and stores the session for `config.api_url`.
 pub async fn login(config: &Config, options: &LoginOptions) -> Result<Identity> {
-    let http = bugsplat_core::http_client()?;
+    let http = bugsplat_core::http_client_with_timeout(REQUEST_TIMEOUT)?;
     let sessions = Sessions::from_env(config)?;
     let session = login::run(config, &http, &sessions, |url| present(url, options)).await?;
     Ok(Identity {
@@ -153,7 +156,7 @@ pub async fn logout(config: &Config) -> Result<()> {
 /// Who [`access_token`] would authenticate as, checked against the server where that
 /// takes a request (client credentials, an expired session).
 pub async fn whoami(config: &Config) -> Result<Identity> {
-    let http = bugsplat_core::http_client()?;
+    let http = bugsplat_core::http_client_with_timeout(REQUEST_TIMEOUT)?;
     identify(config, &http, env_token(), Sessions::from_env).await
 }
 

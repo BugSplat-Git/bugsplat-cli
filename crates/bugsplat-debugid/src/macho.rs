@@ -5,8 +5,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use object::read::ReadRef;
-use object::read::macho::{FatArch, MachHeader, MachOFatFile32};
-use object::{BigEndian, Endianness, U32, macho};
+use object::read::macho::{FatArch, MachHeader, MachOFatFile32, MachOFatFile64};
+use object::{BigEndian, Endianness, FileKind, U32, macho};
 
 use crate::data::Data;
 use crate::sniff::{self, Format};
@@ -51,12 +51,23 @@ fn read_header<Header: MachHeader<Endian = Endianness>>(
 /// The slices of a fat file that have a UUID. `macho-uuid` drops the others, which is how a
 /// fat static library yields nothing.
 pub(crate) fn read_fat(data: &Data) -> Result<Vec<(Slice, Thin)>, String> {
-    let fat = MachOFatFile32::parse(data).map_err(|err| err.to_string())?;
-    Ok(fat
-        .arches()
-        .iter()
-        .filter_map(|arch| {
-            let (offset, size) = arch.file_range();
+    let ranges: Vec<(u64, u64)> = match FileKind::parse(data).map_err(|err| err.to_string())? {
+        FileKind::MachOFat64 => MachOFatFile64::parse(data)
+            .map_err(|err| err.to_string())?
+            .arches()
+            .iter()
+            .map(FatArch::file_range)
+            .collect(),
+        _ => MachOFatFile32::parse(data)
+            .map_err(|err| err.to_string())?
+            .arches()
+            .iter()
+            .map(FatArch::file_range)
+            .collect(),
+    };
+    Ok(ranges
+        .into_iter()
+        .filter_map(|(offset, size)| {
             let thin = read_thin(data, offset).ok()?;
             thin.uuid
                 .is_some()
@@ -91,7 +102,14 @@ pub(crate) fn read_bundle(root: &Path) -> io::Result<Vec<DebugInfo>> {
 /// An executable and its dSYM carry the same UUID. The dSYM has the symbols, so it wins;
 /// between two files outside a dSYM, the larger one does.
 fn replaces(path: &Path, file_len: u64, existing: &Path, existing_len: u64) -> bool {
-    let in_dsym = |path: &Path| path.to_string_lossy().to_lowercase().contains(".dsym");
+    // A folder whose extension is dSYM, not any path that happens to contain the text.
+    let in_dsym = |path: &Path| {
+        path.ancestors().skip(1).any(|folder| {
+            folder
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("dsym"))
+        })
+    };
     in_dsym(path) || (!in_dsym(existing) && file_len >= existing_len)
 }
 
@@ -187,5 +205,13 @@ mod tests {
         assert!(replaces(large, 100, small, 1));
         assert!(!replaces(small, 1, large, 100));
         assert!(replaces(small, 100, large, 100));
+    }
+
+    #[test]
+    fn only_a_folder_with_the_dsym_extension_counts_as_a_dsym() {
+        let cache = Path::new("build.dsym-cache/a.app/Contents/MacOS/a");
+        let app = Path::new("out/a.app/Contents/MacOS/a");
+        assert!(!replaces(cache, 1, app, 100));
+        assert!(replaces(app, 100, cache, 1));
     }
 }

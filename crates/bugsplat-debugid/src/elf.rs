@@ -33,19 +33,22 @@ fn read_class<Header: FileHeader<Endian = Endianness>>(data: &Data) -> Result<El
     // The section is found by name and read whatever its type, as elfy does. A file whose
     // section table can't be read has no id, which is also what symbol-upload reports.
     let sections = header.sections(endian, data).ok();
-    let section = |name: &[u8]| {
+    // Only the id's bytes are read; the section itself can be large. A section that runs
+    // past the end of the file still counts as absent.
+    let section = |name: &[u8], wanted: usize| {
         let (_, section) = sections.as_ref()?.section_by_name(endian, name)?;
-        data.read_bytes_at(
-            section.sh_offset(endian).into(),
-            section.sh_size(endian).into(),
-        )
-        .ok()
+        let offset: u64 = section.sh_offset(endian).into();
+        let size: u64 = section.sh_size(endian).into();
+        if offset.checked_add(size)? > data.len().ok()? {
+            return None;
+        }
+        data.read_bytes_at(offset, size.min(wanted as u64)).ok()
     };
 
-    let id = if let Some(note) = section(b".note.gnu.build-id") {
+    let id = if let Some(note) = section(b".note.gnu.build-id", NOTE_HEADER_LEN + ID_LEN) {
         note.get(NOTE_HEADER_LEN..).map(first_id_bytes)
     } else {
-        section(b".sce_special").map(first_id_bytes)
+        section(b".sce_special", ID_LEN).map(first_id_bytes)
     };
 
     Ok(Elf {

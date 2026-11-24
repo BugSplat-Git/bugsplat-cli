@@ -14,6 +14,7 @@ bugsplat-auth.workspace = true
 bugsplat-core.workspace = true
 bugsplat-debugid.workspace = true
 bugsplat-mcp-client.workspace = true
+bugsplat-mcp-server = { path = "../bugsplat-mcp-server" }
 bugsplat-symbols.workspace = true
 bugsplat-upload.workspace = true
 anyhow.workspace = true

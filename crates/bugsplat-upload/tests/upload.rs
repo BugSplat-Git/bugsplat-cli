@@ -11,7 +11,8 @@ use std::time::{Duration, Instant};
 use bugsplat_core::{Config, Error};
 use bugsplat_debugid::{DebugInfo, ObjectKind, Slice};
 use bugsplat_upload::{
-    Client, Event, EventSink, Options, RetryPolicy, Route, SymbolFile, Target, plan, upload,
+    Client, Event, EventSink, Options, RetryPolicy, Route, SymbolFile, Target, TokenProvider, plan,
+    upload,
 };
 use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
@@ -904,6 +905,41 @@ async fn delete_names_the_version_in_the_query() {
         Some("Bearer test-token")
     );
     assert!(requests[0].body.is_empty());
+}
+
+#[tokio::test]
+async fn a_token_provider_is_asked_for_a_token_before_every_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/api/v2/versions"))
+        .respond_with(success())
+        .mount(&server)
+        .await;
+    let config = Config::new(Some(&server.uri())).unwrap();
+    let calls = Arc::new(Mutex::new(0));
+    let counter = calls.clone();
+    let provider: TokenProvider = Arc::new(move || {
+        let counter = counter.clone();
+        Box::pin(async move {
+            let mut calls = counter.lock().unwrap();
+            *calls += 1;
+            Ok(format!("token-{calls}"))
+        })
+    });
+    let client = Client::with_token_provider(reqwest::Client::new(), &config, provider);
+
+    client.delete_symbols(&target()).await.unwrap();
+    client.delete_symbols(&target()).await.unwrap();
+
+    let requests = requests(&server).await;
+    assert_eq!(
+        header(&requests[0], "authorization"),
+        Some("Bearer token-1")
+    );
+    assert_eq!(
+        header(&requests[1], "authorization"),
+        Some("Bearer token-2")
+    );
 }
 
 #[tokio::test]

@@ -1,6 +1,8 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use bugsplat_core::{Config, Error, Result};
+use futures_util::future::BoxFuture;
 use reqwest::header::{CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, RETRY_AFTER};
 use reqwest::multipart::Form;
 use reqwest::{Body, Response};
@@ -15,11 +17,20 @@ pub struct Target {
     pub version: String,
 }
 
+/// Returns a current bearer token. Called before every request, so a run that outlives
+/// one access token keeps working when the provider refreshes it.
+pub type TokenProvider = Arc<dyn Fn() -> BoxFuture<'static, Result<String>> + Send + Sync>;
+
+enum Token {
+    Fixed(String),
+    Provider(TokenProvider),
+}
+
 /// BugSplat's symbol endpoints, with the request shapes `@bugsplat/js-api-client` uses.
 pub struct Client {
     http: reqwest::Client,
     config: Config,
-    access_token: String,
+    token: Token,
 }
 
 // Not derived: the token must never be printed.
@@ -50,7 +61,26 @@ impl Client {
         Self {
             http,
             config: config.clone(),
-            access_token: access_token.into(),
+            token: Token::Fixed(access_token.into()),
+        }
+    }
+
+    pub fn with_token_provider(
+        http: reqwest::Client,
+        config: &Config,
+        provider: TokenProvider,
+    ) -> Self {
+        Self {
+            http,
+            config: config.clone(),
+            token: Token::Provider(provider),
+        }
+    }
+
+    async fn token(&self) -> Result<String> {
+        match &self.token {
+            Token::Fixed(token) => Ok(token.clone()),
+            Token::Provider(provider) => provider().await,
         }
     }
 
@@ -59,6 +89,7 @@ impl Client {
             "Error deleting symbols for {}-{}-{}",
             target.database, target.application, target.version
         );
+        let token = self.token().await?;
         let response = self
             .http
             .delete(self.config.url("/api/v2/versions"))
@@ -67,7 +98,7 @@ impl Client {
                 ("appName", &target.application),
                 ("appVersion", &target.version),
             ])
-            .bearer_auth(&self.access_token)
+            .bearer_auth(&token)
             .send()
             .await;
         self.read(response, &what, "delete symbols from", target)
@@ -171,10 +202,14 @@ impl Client {
         what: &str,
         target: &Target,
     ) -> std::result::Result<Value, Failure> {
+        let token = self.token().await.map_err(|error| Failure {
+            error,
+            retry: Retry::No,
+        })?;
         let response = self
             .http
             .post(self.config.url(path))
-            .bearer_auth(&self.access_token)
+            .bearer_auth(&token)
             .multipart(form)
             .send()
             .await;

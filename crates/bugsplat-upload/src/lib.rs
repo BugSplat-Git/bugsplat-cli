@@ -16,7 +16,7 @@ mod upload;
 
 pub use bugsplat_debugid::{DebugInfo, Slice};
 
-pub use client::{Client, Target};
+pub use client::{Client, Target, TokenProvider};
 pub use find::find_files;
 pub use local::{LocalCopy, LocalFile, copy_to_local};
 pub use plan::{Route, SymbolFile, plan};

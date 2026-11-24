@@ -143,6 +143,11 @@ async fn bugsplat_with(api_url: String, env: &[(&str, &str)], args: &[&str]) -> 
         ] {
             command.env_remove(name);
         }
+        command.env("BUGSPLAT_TOKEN_STORE", "file");
+        command.env(
+            "BUGSPLAT_CONFIG_DIR",
+            std::env::temp_dir().join("bugsplat-cli-tests"),
+        );
         command.env("BUGSPLAT_API_URL", api_url);
         command.envs(env);
         let output = command.args(args).output().unwrap();

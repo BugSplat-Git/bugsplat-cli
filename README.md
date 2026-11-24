@@ -25,7 +25,7 @@ bugsplat login
 
 `bugsplat login` opens your browser so you can sign in to BugSplat. With `--no-browser`, it prints the sign-in URL and leaves opening it to you.
 
-The CLI stores your session in your operating system's keychain. On a machine without a keychain, such as a container, it stores the session in a file that only your user can read.
+The CLI stores your session in your operating system's keychain. On a machine without a keychain, such as a container, it stores the session in a file that only your user can read. Set `BUGSPLAT_TOKEN_STORE=file` to always use the file. Builds made with `cargo build` (debug builds) use the file by default, so development never touches your keychain.
 
 `bugsplat whoami` shows who is signed in. `bugsplat logout` deletes the stored session.
 
@@ -118,7 +118,8 @@ What changes:
 
 - Long options with two words are written with a hyphen: `--local-path`, `--client-id`, `--client-secret`.
 - The Client ID and Client Secret have no short flags. Use the long options or the environment variables.
-- `symbol-upload` reads the application name and version from `package.json` when you leave them out. The plan for `bugsplat symbols upload` has no such fallback, so pass `-a` and `-v`.
+- Like `symbol-upload`, `bugsplat symbols upload` reads the application name and version from `./package.json` when you leave out `-a` and `-v`. `bugsplat symbols delete` requires both.
+- `bugsplat symbols upload` uploads every file that has a debug id, so `.so`, `.dylib` and extensionless binaries matched by your `-f` pattern upload too. `symbol-upload` skips them.
 - `bugsplat symbols delete` asks you to confirm on a terminal. In a script, add `--yes`.
 
 `bugsplat symbols upload --dry-run` lists the files it would upload, with each file's debug id, and uploads nothing.

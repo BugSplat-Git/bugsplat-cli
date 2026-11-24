@@ -23,6 +23,11 @@ fn bugsplat(server: &MockServer, dir: &Path) -> Command {
     ] {
         command.env_remove(name);
     }
+    command.env("BUGSPLAT_TOKEN_STORE", "file");
+    command.env(
+        "BUGSPLAT_CONFIG_DIR",
+        std::env::temp_dir().join("bugsplat-cli-tests"),
+    );
     command
         .env("BUGSPLAT_API_URL", server.uri())
         .env("BUGSPLAT_ACCESS_TOKEN", TOKEN)

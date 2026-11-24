@@ -26,6 +26,11 @@ fn find() -> Command {
     ] {
         command.env_remove(name);
     }
+    command.env("BUGSPLAT_TOKEN_STORE", "file");
+    command.env(
+        "BUGSPLAT_CONFIG_DIR",
+        std::env::temp_dir().join("bugsplat-cli-tests"),
+    );
     command.args(["symbols", "find"]);
     command
 }

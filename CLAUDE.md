@@ -26,6 +26,7 @@ All four checks must pass before a pull request.
 ## Rules
 
 - Never print, log or put in an error message a token, Client Secret or password. Types that hold one implement `Debug` by hand.
+- Tests never read the developer's real session or keychain: every spawned `bugsplat` gets `BUGSPLAT_TOKEN_STORE=file` and a temporary `BUGSPLAT_CONFIG_DIR`.
 - Tests never call production. Unit tests use mock servers (`wiremock`); end-to-end checks use LocalStack at `http://localhost:8085` with `BUGSPLAT_API_URL` set, and a token from `scripts/localstack-token.py` in `BUGSPLAT_ACCESS_TOKEN`.
 - Results go to stdout, everything else to stderr. `--json` output is stable; text output is for people.
 - Exit codes: 0 success, 1 failure, 2 usage, 3 not signed in (`bugsplat_core::Error::exit_code`).

@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bugsplat_core::Error;
-use bugsplat_upload::{Client, Event, LocalCopy, Options, Route, Summary, SymbolFile, Target};
+use bugsplat_upload::{
+    Client, Event, LocalCopy, Options, Route, Summary, SymbolFile, Target, TokenProvider,
+};
 use clap::Args as ClapArgs;
 use indicatif::{DecimalBytes, MultiProgress, ProgressBar, ProgressStyle};
 use serde::Serialize;
@@ -49,8 +51,15 @@ pub async fn run(args: Args, ctx: &Context) -> anyhow::Result<()> {
     // reading every file's debug id.
     let destination = if uploading {
         let target = names.target(ctx)?;
-        let token = bugsplat_auth::access_token(&ctx.config).await?;
-        let client = Client::new(bugsplat_core::http_client()?, &ctx.config, token.secret);
+        // Fail before reading any file when there is nothing to authenticate with.
+        bugsplat_auth::access_token(&ctx.config).await?;
+        let config = ctx.config.clone();
+        let provider: TokenProvider = Arc::new(move || {
+            let config = config.clone();
+            Box::pin(async move { Ok(bugsplat_auth::access_token(&config).await?.secret) })
+        });
+        let client =
+            Client::with_token_provider(bugsplat_core::http_client()?, &ctx.config, provider);
         Some((client, target))
     } else {
         None

@@ -1,11 +1,11 @@
 //! `symbols delete`. https://github.com/BugSplat-Git/bugsplat-cli/issues/7
 
-use bugsplat_core::Error;
+use bugsplat_upload::{Client, Target};
 use clap::Args as ClapArgs;
+use serde_json::json;
 
 use crate::context::Context;
-
-const ISSUE: &str = "https://github.com/BugSplat-Git/bugsplat-cli/issues/7";
+use crate::output::{confirm, print_json};
 
 #[derive(Debug, ClapArgs)]
 pub struct Args {
@@ -20,10 +20,40 @@ pub struct Args {
     pub yes: bool,
 }
 
-pub async fn run(_args: Args, _ctx: &Context) -> anyhow::Result<()> {
-    Err(Error::NotImplemented {
-        command: "symbols delete",
-        issue: ISSUE,
+pub async fn run(args: Args, ctx: &Context) -> anyhow::Result<()> {
+    let target = Target {
+        database: ctx.config.database()?.to_string(),
+        application: args.application,
+        version: args.version,
+    };
+    let token = bugsplat_auth::access_token(&ctx.config).await?;
+
+    let prompt = format!(
+        "Delete every symbol file for {} {} in database {}?",
+        target.application, target.version, target.database
+    );
+    let deleted = confirm(&prompt, args.yes)?;
+    if deleted {
+        Client::new(bugsplat_core::http_client()?, &ctx.config, token.secret)
+            .delete_symbols(&target)
+            .await?;
     }
-    .into())
+
+    if ctx.config.is_json() {
+        return print_json(&json!({
+            "database": target.database,
+            "application": target.application,
+            "version": target.version,
+            "deleted": deleted,
+        }));
+    }
+    if deleted {
+        println!(
+            "Deleted the symbol files for {} {} in {}.",
+            target.application, target.version, target.database
+        );
+    } else {
+        eprintln!("Nothing was deleted.");
+    }
+    Ok(())
 }

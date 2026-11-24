@@ -1,0 +1,6 @@
+# Steps dist adds to the release build when `github-build-setup` in dist-workspace.toml names
+# this file. dist passes CODESIGN_OPTIONS to `codesign --options`, and Apple's notary service
+# only accepts binaries signed with the hardened runtime.
+- name: Sign macOS binaries with the hardened runtime
+  if: ${{ runner.os == 'macOS' }}
+  run: echo "CODESIGN_OPTIONS=runtime" >> "$GITHUB_ENV"

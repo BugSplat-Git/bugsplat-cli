@@ -35,8 +35,9 @@ npm-scope = "@bugsplat"
 npm-package = "cli"
 
 # macOS signing, switched off until the Developer ID certificate is in the repository's
-# secrets (RELEASING.md). Uncomment and run `dist generate`.
+# secrets (RELEASING.md). Uncomment both lines and run `dist generate`.
 # macos-sign = true
+# github-build-setup = "../release-build-setup.yml"
 
 # `dist generate` writes these commits into the release workflow. Dependabot skips that file
 # (.github/dependabot.yml) because dist refuses to release when it differs from what it generates.

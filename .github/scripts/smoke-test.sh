@@ -75,18 +75,23 @@ expect 0 "Signed out" --api-url "$api" logout
 [[ ! -e $session ]] || fail "logout left $session behind"
 expect 3 "Not signed in" --api-url "$api" whoami
 
-# A CI runner has no Secret Service, which is what a container or a server looks like. Only
-# there: on a desktop this would reach the real keyring.
-if [[ ${GITHUB_ACTIONS:-} == true && $(uname -s) == Linux ]]; then
-  export BUGSPLAT_TOKEN_STORE=auto
-  expect 3 "Not signed in" --api-url "$api" whoami
-  seed_session
-  expect 0 smoke@example.com --api-url "$api" whoami
-  expect 0 "Signed out" --api-url "$api" logout
-  [[ ! -e $session ]] || fail "logout left $session behind"
+# The OS credential store, only on a CI runner: anywhere else this would reach a real keychain.
+if [[ ${GITHUB_ACTIONS:-} == true ]]; then
+  if [[ $(uname -s) == Linux ]]; then
+    # A runner has no Secret Service, which is what a container or a server looks like.
+    export BUGSPLAT_TOKEN_STORE=auto
+    expect 3 "Not signed in" --api-url "$api" whoami
+    seed_session
+    expect 0 smoke@example.com --api-url "$api" whoami
+    expect 0 "Signed out" --api-url "$api" logout
+    [[ ! -e $session ]] || fail "logout left $session behind"
 
-  export BUGSPLAT_TOKEN_STORE=keychain
-  expect 1 Keychain --api-url "$api" whoami
+    export BUGSPLAT_TOKEN_STORE=keychain
+    expect 1 Keychain --api-url "$api" whoami
+  else
+    export BUGSPLAT_TOKEN_STORE=keychain
+    expect 3 "Not signed in" --api-url "$api" whoami
+  fi
 fi
 
 echo "smoke test passed: $target"

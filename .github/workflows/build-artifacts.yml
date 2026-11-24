@@ -8,9 +8,6 @@ name: Build release artifacts
 # at 2x the Linux rate.
 on:
   workflow_dispatch:
-  # Temporary, to prove the builds before this workflow is on the default branch.
-  push:
-    branches: [chore/release-prep]
 
 concurrency:
   group: build-artifacts-${{ github.ref }}
@@ -111,7 +108,8 @@ jobs:
         env:
           TARGET: ${{ matrix.targets[0] }}
         run: |
-          archive=$(ls target/distrib/bugsplat-cli-"$TARGET".tar.gz target/distrib/bugsplat-cli-"$TARGET".zip 2> /dev/null | head -n 1)
+          archive=target/distrib/bugsplat-cli-$TARGET.tar.gz
+          [[ -e $archive ]] || archive=target/distrib/bugsplat-cli-$TARGET.zip
           .github/scripts/smoke-test.sh "$archive" "$TARGET"
 
   smoke-windows-arm64:

@@ -17,6 +17,8 @@ bugsplat --version
 
 `cargo install` puts the `bugsplat` binary in `~/.cargo/bin`. `bugsplat --version` prints the version and the target the binary was built for, for example `bugsplat 0.1.0 (aarch64-apple-darwin)`.
 
+The first release will be the npm package `@bugsplat/cli`, for macOS, Linux and Windows on x64 and arm64. The package downloads the binary for your platform when you install it, and the `bugsplat` command it adds starts that binary through Node.js. You will need Node.js 14.18 or later to install the package and to run `bugsplat`. Each release will also have the binary itself for each platform, which runs without Node.js.
+
 ## Sign in
 
 ```bash
@@ -75,6 +77,8 @@ Set the credentials as environment variables, or pass `--client-id` and `--clien
 | `BUGSPLAT_CLIENT_SECRET` | The Client Secret |
 
 When a Client ID and Client Secret are set, the CLI uses them and ignores any stored session.
+
+On Linux, `bugsplat` verifies HTTPS connections with the CA certificates installed on the system. A minimal container image, such as `node:22-slim`, has none, and commands fail with `No CA certificates were loaded from the system`. Install the image's `ca-certificates` package first.
 
 This GitHub Actions step uploads the Windows symbols of a build. It assumes an earlier step put `bugsplat` on the `PATH`.
 
@@ -135,7 +139,7 @@ cargo fmt --all
 
 CI runs the same checks on Linux, and the tests on macOS and Windows, for every pull request. CI also runs [`cargo deny`](https://github.com/EmbarkStudios/cargo-deny) to check dependency licenses and security advisories. Run `cargo deny check` yourself after you add a dependency.
 
-Releases are built with [dist](https://github.com/axodotdev/cargo-dist) from `dist-workspace.toml`. `dist plan` shows what a release would build. The release workflow runs only when a `v*` version tag is pushed, and nothing is published until the repository is public.
+Releases are built with [dist](https://github.com/axodotdev/cargo-dist) from `dist-workspace.toml`. `dist plan` shows what a release would build. The release workflow runs only when a `v*` version tag is pushed, and nothing is published until the repository is public. To build and smoke-test every target without a release, start the "Build release artifacts" workflow by hand. [RELEASING.md](RELEASING.md) has the release checklist.
 
 ## License
 

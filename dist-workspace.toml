@@ -24,16 +24,14 @@ install-path = "~/.bugsplat/bin"
 # The updater downloads from GitHub Releases, which it can't do while the repository is private.
 install-updater = false
 
-# Homebrew and npm publishing, switched off until the package names are agreed
-# (https://github.com/BugSplat-Git/bugsplat-cli/issues/1, open question 3). To switch them on:
-# add "homebrew" and "npm" to `installers`, uncomment these lines and the setup-node pin below,
-# set `homepage` for the bugsplat-cli package, create the tap repository, add the
-# HOMEBREW_TAP_TOKEN and NPM_TOKEN secrets, and run `dist generate`.
-# tap = "BugSplat-Git/homebrew-tap"
-# formula = "bugsplat"
+# npm publishing as @bugsplat/cli, switched off until the first release. To switch it on:
+# add "npm" to `installers`, uncomment these lines and the setup-node pin below, add the
+# NPM_TOKEN secret, and run `dist generate`. npm is the primary installer; there is no Homebrew
+# tap. `brew install bugsplat` would need a formula accepted into homebrew-core, which is
+# possible once the repository is public and the CLI has releases.
 # npm-scope = "@bugsplat"
 # npm-package = "cli"
-# publish-jobs = ["homebrew", "npm"]
+# publish-jobs = ["npm"]
 
 # `dist generate` writes these commits into the release workflow. Dependabot skips that file
 # (.github/dependabot.yml) because dist refuses to release when it differs from what it generates.

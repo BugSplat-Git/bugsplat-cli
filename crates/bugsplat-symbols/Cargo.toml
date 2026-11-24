@@ -11,8 +11,11 @@ publish.workspace = true
 
 [dependencies]
 bugsplat-debugid.workspace = true
+globset = "0.4"
+ignore = "0.4"
 serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 tempfile.workspace = true

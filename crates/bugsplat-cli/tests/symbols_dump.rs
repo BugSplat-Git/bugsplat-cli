@@ -229,6 +229,58 @@ fn dump_does_not_replace_a_file_it_wrote_for_the_same_module() {
 }
 
 #[test]
+fn dump_does_not_replace_a_binary_named_like_its_sym_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let binary = dir.path().join("hello.sym");
+    fs::copy(fixture("elfy/hello.elf"), &binary).unwrap();
+
+    let assert = bugsplat(dir.path())
+        .args(["symbols", "dump", "hello.sym"])
+        .assert()
+        .code(1);
+    let err = stderr(&assert);
+    assert!(err.contains("its .sym file would replace it"), "{err}");
+    assert_eq!(
+        fs::read(&binary).unwrap(),
+        fs::read(fixture("elfy/hello.elf")).unwrap()
+    );
+
+    bugsplat(dir.path())
+        .args(["symbols", "dump", "hello.sym", "-o", "syms"])
+        .assert()
+        .success();
+    assert_eq!(
+        first_line(&dir.path().join("syms").join("hello.sym")),
+        "MODULE Linux x86_64 6F21FE85DDC71F4404C237310A56081F0 hello.sym"
+    );
+}
+
+/// Where file names are case sensitive, names that differ only by case are different files.
+#[cfg(not(any(target_os = "macos", windows)))]
+#[test]
+fn dump_keeps_names_that_differ_by_case_side_by_side() {
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["libFoo.so", "libfoo.so", "LIBFOO.so"] {
+        fs::copy(fixture("elfy/hello.elf"), dir.path().join(name)).unwrap();
+    }
+    bugsplat(dir.path())
+        .args([
+            "symbols",
+            "dump",
+            "libFoo.so",
+            "libfoo.so",
+            "LIBFOO.so",
+            "-o",
+            "syms",
+        ])
+        .assert()
+        .success();
+    for name in ["libFoo.so.sym", "libfoo.so.sym", "LIBFOO.so.sym"] {
+        assert!(dir.path().join("syms").join(name).is_file(), "{name}");
+    }
+}
+
+#[test]
 fn dump_converts_what_it_can_and_fails_for_the_rest() {
     let dir = tempfile::tempdir().unwrap();
     let portable = fixture("symbol-upload/portable.pdb");

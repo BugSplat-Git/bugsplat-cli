@@ -178,10 +178,8 @@ fn dump_into(
     written: &mut HashMap<PathBuf, PathBuf>,
 ) -> Result<Vec<Dumped>, String> {
     dump(input, companions, |sym| {
-        // Compared in lowercase: macOS and Windows file names ignore case.
-        let key = |folder: &Path| {
-            PathBuf::from(folder.join(sym.file_name).to_string_lossy().to_lowercase())
-        };
+        let key =
+            |folder: &Path| PathBuf::from(fold_case(&folder.join(sym.file_name).to_string_lossy()));
         let mut folder = output.to_path_buf();
         if sym.shared || written.contains_key(&key(&folder)) {
             folder.push(sym.debug_id);
@@ -200,6 +198,16 @@ fn dump_into(
         written.insert(key(&folder), input.to_path_buf());
         Ok(folder)
     })
+}
+
+/// The form two file names are compared in: macOS and Windows file names ignore case, and
+/// elsewhere `libFoo.so.sym` and `libfoo.so.sym` are two files.
+fn fold_case(name: &str) -> String {
+    if cfg!(any(target_os = "macos", windows)) {
+        name.to_lowercase()
+    } else {
+        name.to_string()
+    }
 }
 
 /// What the folder of a `.sym` file is chosen from.
@@ -223,7 +231,7 @@ fn dump(
     let mut dumped = Vec::new();
     for symbols in &all {
         let same_name = |other: &&bugsplat_dumpsyms::Symbols| {
-            other.file_name.to_lowercase() == symbols.file_name.to_lowercase()
+            fold_case(&other.file_name) == fold_case(&symbols.file_name)
         };
         let folder = folder(Pending {
             file_name: &symbols.file_name,

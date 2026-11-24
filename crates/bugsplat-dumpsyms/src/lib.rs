@@ -79,9 +79,21 @@ impl Symbols {
         })
     }
 
-    /// Writes `<dir>/<file_name>`, creating `dir`, and returns the path.
+    /// Writes `<dir>/<file_name>`, creating `dir`, and returns the path. A file already there
+    /// is replaced, unless it is the file the symbols came from.
     pub fn write_to(&self, dir: &Path) -> Result<PathBuf> {
         let path = dir.join(&self.file_name);
+        // A binary can be named like its own .sym file: `hello.sym` converts to `hello.sym`.
+        if let (Ok(destination), Ok(source)) =
+            (fs::canonicalize(&path), fs::canonicalize(&self.source))
+            && destination == source
+        {
+            return Err(Error::Failed {
+                path: self.source.clone(),
+                reason: "its .sym file would replace it; write the .sym file to another folder"
+                    .to_string(),
+            });
+        }
         let write = || {
             fs::create_dir_all(dir)?;
             let mut writer = BufWriter::new(File::create(&path)?);

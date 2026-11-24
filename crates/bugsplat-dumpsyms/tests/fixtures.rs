@@ -317,6 +317,31 @@ fn files_dump_syms_cannot_convert_are_unsupported() {
 }
 
 #[test]
+fn a_binary_named_like_its_sym_file_is_not_replaced() {
+    let dir = tempfile::tempdir().unwrap();
+    let binary = dir.path().join("hello.sym");
+    fs::copy(fixture("elfy/hello.elf"), &binary).unwrap();
+    let all = read(&binary).unwrap();
+    assert_eq!(all[0].file_name, "hello.sym");
+
+    assert!(matches!(
+        all[0].write_to(dir.path()),
+        Err(Error::Failed { path, .. }) if path == binary
+    ));
+    assert_eq!(
+        fs::read(&binary).unwrap(),
+        fs::read(fixture("elfy/hello.elf")).unwrap()
+    );
+
+    let written = all[0].write_to(&dir.path().join("syms")).unwrap();
+    assert!(
+        fs::read_to_string(written)
+            .unwrap()
+            .starts_with("MODULE Linux x86_64 ")
+    );
+}
+
+#[test]
 fn a_bundle_yields_every_dwarf_file_in_it() {
     let dir = tempfile::tempdir().unwrap();
     let dwarf = dir

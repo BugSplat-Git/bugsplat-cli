@@ -122,7 +122,30 @@ pub(super) fn dump_for_upload(
         )
         .into());
     }
-    Ok(dumped)
+    Ok(one_per_module(dumped))
+}
+
+/// A glob like `**/*.{pdb,exe,dll}` selects a binary and its PDB, and both yield the module's
+/// `.sym` file, which BugSplat stores once. The larger one is kept: the PDB alone has no
+/// unwind data when it isn't named after its binary.
+fn one_per_module(dumped: Vec<Dumped>) -> Vec<Dumped> {
+    let size = |sym: &Dumped| std::fs::metadata(&sym.path).map_or(0, |metadata| metadata.len());
+    let key = |sym: &Dumped| {
+        (
+            sym.debug_id.to_lowercase(),
+            sym.module_name.to_lowercase(),
+            file_name(&sym.path).to_lowercase(),
+        )
+    };
+    let mut kept: Vec<Dumped> = Vec::new();
+    for sym in dumped {
+        match kept.iter_mut().find(|other| key(other) == key(&sym)) {
+            Some(other) if size(&sym) > size(other) => *other = sym,
+            Some(_) => {}
+            None => kept.push(sym),
+        }
+    }
+    kept
 }
 
 /// Writes the `.sym` files of one input into `output`. A name that would land on a file this

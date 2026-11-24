@@ -384,6 +384,51 @@ async fn dump_syms_with_local_path_stores_the_sym_file_under_the_pdb_name() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_binary_and_its_pdb_selected_together_upload_one_sym_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let build = dir.path().join("build");
+    fs::create_dir(&build).unwrap();
+    fs::copy(fixture("pdb-guid/bugsplat.dll"), build.join("bugsplat.dll")).unwrap();
+    // Named as the DLL's debug directory spells it. Where file names are case sensitive the
+    // PDB then can't find `BugSplat.dll`, and its .sym file lacks the code id.
+    fs::copy(fixture("pdb-guid/bugsplat.pdb"), build.join("BugSplat.pdb")).unwrap();
+    let mut command = bugsplat(dir.path());
+    command.args([
+        "symbols",
+        "upload",
+        "-d",
+        "build",
+        "-f",
+        "*.{pdb,exe,dll}",
+        "-m",
+        "-l",
+        "store",
+    ]);
+
+    let assert = run(command).await.success();
+
+    assert!(
+        stdout(&assert).contains("Copied 1 file"),
+        "{}",
+        stdout(&assert)
+    );
+    let stored = dir
+        .path()
+        .join("store")
+        .join("BugSplat.pdb")
+        .join("E546B55B6D214E86871B40AC35CD0D461")
+        .join("BugSplat.sym");
+    let text = fs::read_to_string(stored).unwrap();
+    let head = &text[..200];
+    assert!(
+        head.starts_with("MODULE windows x86 E546B55B6D214E86871B40AC35CD0D461 BugSplat.pdb\n"),
+        "{head}"
+    );
+    assert!(head.contains("\nINFO CODE_ID 64FB82ED7A000 "), "{head}");
+    assert!(text.contains("\nFUNC "));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_dry_run_with_dump_syms_shows_what_each_sym_file_comes_from() {
     let dir = build_folder();
     let exe = Path::new("build").join("bssndrpt.exe");

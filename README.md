@@ -48,7 +48,6 @@ The table lists the commands in the first release.
 | `bugsplat symbols info <file>...` | Print each file's debug id, module name, and type |
 | `bugsplat symbols find` | Search folders for symbol files that match debug ids or names |
 | `bugsplat symbols upload`, `symbols delete` | Upload an application version's symbol files, or delete them |
-| `bugsplat mcp` | Run as a local MCP server, for MCP clients that can't run shell commands |
 | `bugsplat completions <shell>` | Print a shell completion script |
 
 The commands that read crash data call the tools of BugSplat's hosted MCP server, so `bugsplat groups list` returns what a coding agent gets from the `list-groups` tool.
@@ -64,26 +63,6 @@ These options work with every command:
 | `--verbose` | | Print more detail about what the command is doing |
 
 Results go to stdout and errors go to stderr. The exit code is 0 for success, 1 for a failure, 2 for a usage error, and 3 when you are not signed in.
-
-## Use as a local MCP server
-
-`bugsplat mcp` runs the CLI as an MCP server over stdio, for clients that can't run shell commands, such as Claude Desktop. It offers the symbol tools that BugSplat's hosted MCP server can't, because that server can't see your disk: `symbols-info`, `symbols-find`, and `symbols-upload`. Crash data still comes from the hosted server at `https://api.bugsplat.com/mcp`, which you add to your client separately.
-
-Run `bugsplat login` once in a terminal, then add the server to your client's MCP configuration:
-
-```json
-{
-  "mcpServers": {
-    "bugsplat-cli": {
-      "command": "bugsplat",
-      "args": ["mcp"],
-      "env": { "BUGSPLAT_DATABASE": "your-database" }
-    }
-  }
-}
-```
-
-`env` is optional and sets the database `symbols-upload` uses when a call doesn't name one. Desktop apps often start servers with a short `PATH`, so `command` may need the full path that `which bugsplat` prints.
 
 ## Use in CI
 

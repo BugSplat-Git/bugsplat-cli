@@ -37,6 +37,12 @@ impl Config {
                 "Invalid API URL `{raw}`: expected http(s)://host"
             )));
         }
+        // Endpoints are appended to this URL, which would land inside a query or fragment.
+        if api_url.query().is_some() || api_url.fragment().is_some() {
+            return Err(Error::Usage(format!(
+                "Invalid API URL `{raw}`: it can't have a query or a fragment"
+            )));
+        }
         Ok(Self {
             api_url,
             database: None,
@@ -121,6 +127,12 @@ mod tests {
             Err(Error::Usage(_))
         ));
         assert!(matches!(Config::new(Some("ftp://x")), Err(Error::Usage(_))));
+        for url in ["http://localhost:8085?x=1", "http://localhost:8085/#mcp"] {
+            assert!(
+                matches!(Config::new(Some(url)), Err(Error::Usage(_))),
+                "{url}"
+            );
+        }
     }
 
     #[test]

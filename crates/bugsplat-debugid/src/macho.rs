@@ -1,5 +1,7 @@
 //! Mach-O ids as `macho-uuid` produces them: each slice's `LC_UUID`, lowercase.
 
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -81,14 +83,16 @@ pub(crate) fn read_bundle(root: &Path) -> io::Result<Vec<DebugInfo>> {
     collect_files(root, &mut files)?;
 
     let mut unique: Vec<(DebugInfo, u64)> = Vec::new();
+    let mut index_of: HashMap<String, usize> = HashMap::new();
     for path in files {
         for (object, file_len) in read_objects(&path) {
-            match unique
-                .iter_mut()
-                .find(|(existing, _)| existing.debug_id == object.debug_id)
-            {
-                None => unique.push((object, file_len)),
-                Some(existing) => {
+            match index_of.entry(object.debug_id.clone()) {
+                Entry::Vacant(slot) => {
+                    slot.insert(unique.len());
+                    unique.push((object, file_len));
+                }
+                Entry::Occupied(slot) => {
+                    let existing = &mut unique[*slot.get()];
                     if replaces(&object.path, file_len, &existing.0.path, existing.1) {
                         *existing = (object, file_len);
                     }

@@ -43,8 +43,11 @@ def main():
 
     require_local(base)
 
+    # No proxies: one from the environment would carry the email and password off this machine.
     opener = urllib.request.build_opener(
-        NoRedirect, urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+        urllib.request.ProxyHandler({}),
+        NoRedirect,
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
     )
 
     # Discovery documents and redirects name their own URLs, so check every one.

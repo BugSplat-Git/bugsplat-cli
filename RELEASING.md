@@ -69,7 +69,7 @@ Both scripts set `BUGSPLAT_TOKEN_STORE=file` and a temporary `BUGSPLAT_CONFIG_DI
 
 ## The Linux build image
 
-`bugsplat symbols dump` and `upload --dump-syms` use Sentry's `symbolic`, whose Swift demangler is C++17. Every build of `bugsplat` therefore needs a C++ compiler for its target. The macOS and Windows runners have one. For the two Linux targets the compiler has to target musl, and Ubuntu packages none: `musl-tools` has only `musl-gcc`, for C.
+`bugsplat symbols dump` and `upload --dump-syms` use the `symbolic` crates, whose Swift demangler is C++17. Every build of `bugsplat` therefore needs a C++ compiler for its target. The macOS and Windows runners have one. For the two Linux targets the compiler has to target musl, and Ubuntu packages none: `musl-tools` has only `musl-gcc`, for C.
 
 The two Linux targets are built in a container of [rust-musl-cross](https://github.com/rust-cross/rust-musl-cross), which has GCC 12.4.0 and musl 1.2.5 built with [musl-cross-make](https://github.com/richfelker/musl-cross-make), including `g++` and a static `libstdc++`. The images are set under `[dist.github-custom-runners]` in `dist-workspace.toml`, one for each target, and each runs on a runner of its own architecture:
 

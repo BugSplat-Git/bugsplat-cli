@@ -1,0 +1,22 @@
+[package]
+name = "bugsplat-dumpsyms"
+description = "Breakpad .sym files from binaries and debug files, with Mozilla's dump_syms"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Without default features: `http` is what lets dump_syms download from symbol servers, and
+# `cli` is its own command line.
+dump_syms = { version = "2.3.9", default-features = false }
+symbolic = { version = "13", default-features = false, features = ["debuginfo"] }
+anyhow.workspace = true
+bugsplat-debugid.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

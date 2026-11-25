@@ -15,6 +15,7 @@ use clap::Args as ClapArgs;
 use indicatif::{DecimalBytes, MultiProgress, ProgressBar, ProgressStyle};
 use serde::Serialize;
 
+use super::dump::{self, Dumped};
 use crate::context::Context;
 use crate::output::print_json;
 
@@ -41,6 +42,10 @@ pub struct Args {
     /// List what would be uploaded, with each file's debug id, and upload nothing
     #[arg(long)]
     pub dry_run: bool,
+    /// Generate a Breakpad .sym file from each selected binary with dump_syms, and upload
+    /// that instead of the binary
+    #[arg(short = 'm', long)]
+    pub dump_syms: bool,
 }
 
 pub async fn run(args: Args, ctx: &Context) -> anyhow::Result<()> {
@@ -73,14 +78,27 @@ pub async fn run(args: Args, ctx: &Context) -> anyhow::Result<()> {
         ))
         .into());
     }
+    // Holds the generated .sym files until they are uploaded or copied.
+    let scratch;
+    let (paths, generated) = if args.dump_syms {
+        scratch = tempfile::Builder::new()
+            .prefix("bugsplat-dump-syms-")
+            .tempdir()?;
+        let generated = dump::dump_for_upload(&paths, scratch.path(), ctx.config.quiet)?;
+        let paths = generated.iter().map(|sym| sym.path.clone()).collect();
+        (paths, Some(generated))
+    } else {
+        (paths, None)
+    };
+    let generated = generated.as_deref();
     let files = bugsplat_upload::plan(&paths, bugsplat_debugid::read);
 
     if args.dry_run {
         let summary = Summary::dry_run(&files);
         if ctx.config.is_json() {
-            return print_json(&Report::new(&names, true, &summary));
+            return print_json(&Report::new(&names, true, &summary, generated));
         }
-        print_plan(&files);
+        print_plan(&files, generated.unwrap_or_default());
         return Ok(());
     }
 
@@ -119,7 +137,7 @@ pub async fn run(args: Args, ctx: &Context) -> anyhow::Result<()> {
     let summary = result?;
 
     if ctx.config.is_json() {
-        return print_json(&Report::new(&names, false, &summary));
+        return print_json(&Report::new(&names, false, &summary, generated));
     }
     println!(
         "Uploaded {} ({}) to {} for {} {} in {:.1}s ({}/s).{}",
@@ -205,21 +223,31 @@ struct Report<'a> {
     dry_run: bool,
     #[serde(flatten)]
     summary: &'a Summary,
+    /// With `--dump-syms`: the generated files and what each was generated from. They are
+    /// temporary, so their paths are gone once the command ends.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    generated: Option<&'a [Dumped]>,
 }
 
 impl<'a> Report<'a> {
-    fn new(names: &'a Names, dry_run: bool, summary: &'a Summary) -> Self {
+    fn new(
+        names: &'a Names,
+        dry_run: bool,
+        summary: &'a Summary,
+        generated: Option<&'a [Dumped]>,
+    ) -> Self {
         Self {
             database: names.database.as_deref(),
             application: names.application.as_deref(),
             version: names.version.as_deref(),
             dry_run,
             summary,
+            generated,
         }
     }
 }
 
-fn print_plan(files: &[SymbolFile]) {
+fn print_plan(files: &[SymbolFile], generated: &[Dumped]) {
     let id_width = files
         .iter()
         .map(|file| file.debug_id.len())
@@ -238,10 +266,12 @@ fn print_plan(files: &[SymbolFile]) {
         } else {
             &file.debug_id
         };
-        let mut line = format!(
-            "{route:<13}  {debug_id:<id_width$}  {}",
-            file.path.display()
-        );
+        // A generated file is temporary; what it was generated from is the path that lasts.
+        let shown = match generated.iter().find(|sym| sym.path == file.path) {
+            Some(sym) => format!("{} from {}", file.name, sym.source.display()),
+            None => file.path.display().to_string(),
+        };
+        let mut line = format!("{route:<13}  {debug_id:<id_width$}  {shown}");
         if let Some(arch) = &file.arch {
             line.push_str(&format!(" ({arch})"));
         }

@@ -43,7 +43,8 @@ A machine without Node.js can use the archive for its platform from the GitHub R
 
 The "Build release artifacts" workflow (`.github/workflows/build-artifacts.yml`) builds everything in the table above and keeps the files as workflow artifacts for seven days. It never creates a tag, a GitHub Release, or a package. The workflow also:
 
-- runs `.github/scripts/smoke-test.sh` on each binary on a runner of its own platform: `bugsplat --version`, `bugsplat symbols info` on committed PDB, PE, ELF and dSYM fixtures, and `whoami` and `logout` against a session in the file token store. On the runner, the script also checks the operating system's credential store: that the macOS keychain and the Windows Credential Manager answer, and that `whoami` and `logout` use the session file on a Linux machine with no Secret Service. Storing a session needs `bugsplat login`, so the script does not cover it;
+- runs `.github/scripts/smoke-test.sh` on each binary on a runner of its own platform: `bugsplat --version`, `bugsplat symbols info` on committed PDB, PE, ELF and dSYM fixtures, `bugsplat symbols dump` on the ELF fixture, and `whoami` and `logout` against a session in the file token store. On the runner, the script also checks the operating system's credential store: that the macOS keychain and the Windows Credential Manager answer, and that `whoami` and `logout` use the session file on a Linux machine with no Secret Service. Storing a session needs `bugsplat login`, so the script does not cover it;
+- checks with `.github/scripts/linux-container-test.sh` that each Linux binary has no loader and no shared library, then runs it in an Alpine container and in a Debian slim container with no network: `bugsplat --version`, `symbols info`, and `symbols dump` on the ELF fixture, on an ELF file with a Swift symbol, on the image's shell and on `bugsplat` itself;
 - installs the generated npm package into a temporary project with `.github/scripts/npm-package-test.sh` and runs `bugsplat --version` through it. The script points the package's download URL at the archives the run just built, because the GitHub Release does not exist yet.
 
 The workflow runs only when you start it:
@@ -65,6 +66,37 @@ dist build --artifacts=global
 ```
 
 Both scripts set `BUGSPLAT_TOKEN_STORE=file` and a temporary `BUGSPLAT_CONFIG_DIR`, so they never read your keychain or your real session.
+
+## The Linux build image
+
+`bugsplat symbols dump` and `upload --dump-syms` use Sentry's `symbolic`, whose Swift demangler is C++17. Every build of `bugsplat` therefore needs a C++ compiler for its target. The macOS and Windows runners have one. For the two Linux targets the compiler has to target musl, and Ubuntu packages none: `musl-tools` has only `musl-gcc`, for C.
+
+The two Linux targets are built in a container of [rust-musl-cross](https://github.com/rust-cross/rust-musl-cross), which has GCC 12.4.0 and musl 1.2.5 built with [musl-cross-make](https://github.com/richfelker/musl-cross-make), including `g++` and a static `libstdc++`. The images are set under `[dist.github-custom-runners]` in `dist-workspace.toml`, one for each target, and each runs on a runner of its own architecture:
+
+| Target | Image | Digest |
+| --- | --- | --- |
+| `x86_64-unknown-linux-musl` | `ghcr.io/rust-cross/rust-musl-cross:x86_64-musl` | `sha256:3f1010eb48311dfde5d51f011163451940af34bd317355c4a8652ce6b4b61051` |
+| `aarch64-unknown-linux-musl` | `ghcr.io/rust-cross/rust-musl-cross:aarch64-musl` | `sha256:02e790506c5f15a533bc05b3af8719b16a8a2314480f6f0fdc0166432035d9b4` |
+
+- The digest pins the image, so a build uses these exact files until someone changes the digest. Each digest names an image index that covers x64 and arm64 runners.
+- The image is built by the rust-musl-cross project, not by us or by GitHub. Its maintainer also publishes `messense/cargo-xwin`, the image dist uses to build Windows arm64, and `cargo-zigbuild`.
+- The build takes its C and C++ compilers, its linker, `libstdc++` and the Ubuntu 22.04 userland from the image. Rust still comes from `rust-toolchain.toml`: `rustup` in the image installs that version.
+- The same images are on Docker Hub as `messense/rust-musl-cross`, with the same digests.
+
+To move a pin, read the new digest, change it in `dist-workspace.toml`, run `dist generate`, and run the "Build release artifacts" workflow:
+
+```bash
+docker buildx imagetools inspect ghcr.io/rust-cross/rust-musl-cross:x86_64-musl
+docker buildx imagetools inspect ghcr.io/rust-cross/rust-musl-cross:aarch64-musl
+```
+
+To build a Linux target on your own machine, run the build in the same image. On an Apple silicon Mac:
+
+```bash
+docker run --rm -v "$PWD":/home/rust/src \
+  ghcr.io/rust-cross/rust-musl-cross:aarch64-musl@sha256:02e790506c5f15a533bc05b3af8719b16a8a2314480f6f0fdc0166432035d9b4 \
+  sh -c 'rustup target add aarch64-unknown-linux-musl && cargo build --release --target aarch64-unknown-linux-musl'
+```
 
 ## Before the first release
 
@@ -187,5 +219,6 @@ npm never lets a version number be reused, so a release that published a broken 
 ## Toolchain versions
 
 - Rust is pinned in `rust-toolchain.toml`. CI, the release builds, and your machine all read that file.
+- The C and C++ toolchain of the Linux builds is pinned by the image digests under `[dist.github-custom-runners]` in `dist-workspace.toml`. See "The Linux build image".
 - dist is pinned by `cargo-dist-version` in `dist-workspace.toml`. Install the same version locally before you run `dist generate`, because the release workflow fails when `v-release.yml` differs from what its dist version generates.
 - The actions in `v-release.yml` are pinned to commits under `[dist.github-action-commits]` in `dist-workspace.toml`. Dependabot does not update that workflow; change the pins there and run `dist generate`.

@@ -58,6 +58,11 @@ expect 0 64FB82ED7A000 symbols info "$fixtures/pdb-guid/bugsplat.dll"
 expect 0 85fe216fc7dd441f04c237310a56081fbf23c082 symbols info "$fixtures/elfy/hello.elf"
 expect 0 ac15902fba2e31c18b29da51e889b321 symbols info "$fixtures/macho-uuid/bugsplat.app.dSYM"
 
+expect 0 hello.sym symbols dump --output "$work/sym" "$fixtures/elfy/hello.elf"
+module=$(head -n 1 "$work/sym/hello.sym" | tr -d '\r')
+[[ $module == "MODULE Linux x86_64 6F21FE85DDC71F4404C237310A56081F0 hello.elf" ]] ||
+  fail "hello.sym starts with \"$module\""
+
 # Nothing listens on port 9, and a stored session that hasn't expired needs no request.
 api=http://127.0.0.1:9
 session="$BUGSPLAT_CONFIG_DIR/sessions/http___127.0.0.1_9.json"

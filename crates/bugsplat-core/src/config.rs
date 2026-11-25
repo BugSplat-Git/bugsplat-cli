@@ -30,18 +30,24 @@ pub struct Config {
 impl Config {
     pub fn new(api_url: Option<&str>) -> Result<Self> {
         let raw = api_url.unwrap_or(DEFAULT_API_URL).trim_end_matches('/');
-        let api_url =
-            Url::parse(raw).map_err(|e| Error::Usage(format!("Invalid API URL `{raw}`: {e}")))?;
+        let api_url = Url::parse(raw).map_err(|e| Error::Usage(format!("Invalid API URL: {e}")))?;
+        // The URL is printed by `whoami`, `--verbose` and these errors, so it must not carry
+        // a secret, and no error here repeats the input.
+        if !api_url.username().is_empty() || api_url.password().is_some() {
+            return Err(Error::Usage(
+                "Invalid API URL: it can't contain a user name or a password".to_string(),
+            ));
+        }
         if !matches!(api_url.scheme(), "http" | "https") || api_url.host_str().is_none() {
-            return Err(Error::Usage(format!(
-                "Invalid API URL `{raw}`: expected http(s)://host"
-            )));
+            return Err(Error::Usage(
+                "Invalid API URL: expected http(s)://host".to_string(),
+            ));
         }
         // Endpoints are appended to this URL, which would land inside a query or fragment.
         if api_url.query().is_some() || api_url.fragment().is_some() {
-            return Err(Error::Usage(format!(
-                "Invalid API URL `{raw}`: it can't have a query or a fragment"
-            )));
+            return Err(Error::Usage(
+                "Invalid API URL: it can't have a query or a fragment".to_string(),
+            ));
         }
         Ok(Self {
             api_url,
@@ -132,6 +138,18 @@ mod tests {
                 matches!(Config::new(Some(url)), Err(Error::Usage(_))),
                 "{url}"
             );
+        }
+        for url in [
+            "https://user:hunter2@example.com",
+            "https://user:hunter2@example.com/?x=1",
+            "https://hunter2@example.com",
+            "ftp://user:hunter2@example.com",
+            "https://user:hunter2@exa mple.com",
+        ] {
+            let Err(Error::Usage(message)) = Config::new(Some(url)) else {
+                panic!("{url} was accepted");
+            };
+            assert!(!message.contains("hunter2"), "{message}");
         }
     }
 

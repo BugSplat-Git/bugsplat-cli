@@ -35,7 +35,7 @@ npm is the primary way to install the CLI: `npm install -g @bugsplat/cli`.
 - The `bugsplat` command that npm adds is a Node.js script that starts the downloaded binary and passes its arguments, output, and exit code through. You need Node.js 14.18 or later to install the package and every time you run `bugsplat`. On an Apple silicon Mac, `bugsplat --version` took about 0.15 seconds through the script and about 0.02 seconds when we ran the binary directly.
 - Unpacking uses the system `tar` on macOS and Linux and PowerShell's `Expand-Archive` on Windows. We ship `.tar.gz` archives because `tar` in slim container images, such as `node:22-slim`, cannot unpack `.tar.xz`.
 - The package has one dependency, `detect-libc`.
-- The package's README is this repository's `README.md`, so the "first release is not out yet" notice has to come out of the README before the first publish.
+- The package's README is this repository's `README.md`.
 
 A machine without Node.js can use the archive for its platform from the GitHub Release. The archive holds the `bugsplat` binary, which runs without Node.js.
 
@@ -106,7 +106,6 @@ Each of these needs a person with access we do not give to automation.
 2. **Choose who publishes to npm.** That person needs permission to publish packages in the `@bugsplat` organization on npmjs.com. See "Publishing to npm".
 3. **Agree on the version.** `Cargo.toml` says `0.1.0`.
 4. **Sign the macOS binaries.** See "macOS signing and notarization". The certificate has to come from our Apple Developer account.
-5. **Update the README.** Remove the "first release is not out yet" notice. The npm command and the build-from-source section both stay.
 
 ## Publishing to npm
 

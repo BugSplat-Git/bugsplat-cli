@@ -1,0 +1,40 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/BugSplat-Git/bugsplat-cli"
+authors = ["BugSplat <support@bugsplat.com>"]
+publish = false
+
+[workspace.dependencies]
+bugsplat-auth = { path = "crates/bugsplat-auth" }
+bugsplat-core = { path = "crates/bugsplat-core" }
+bugsplat-debugid = { path = "crates/bugsplat-debugid" }
+bugsplat-mcp-client = { path = "crates/bugsplat-mcp-client" }
+bugsplat-symbols = { path = "crates/bugsplat-symbols" }
+bugsplat-upload = { path = "crates/bugsplat-upload" }
+
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+clap_complete = "4"
+dirs = "7"
+reqwest = { version = "0.13", features = ["json", "stream", "multipart", "form", "query"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "net", "time", "sync", "io-util"] }
+url = { version = "2", features = ["serde"] }
+
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+wiremock = "0.6"
+
+[profile.dist]
+inherits = "release"
+lto = "thin"

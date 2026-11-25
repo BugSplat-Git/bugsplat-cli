@@ -1,0 +1,195 @@
+name: Build release artifacts
+
+# Builds what a release would build, for every target, and keeps the result as workflow
+# artifacts. It never tags, creates a GitHub Release or publishes a package; only
+# v-release.yml does, and only for a `v*` tag.
+#
+# Manual only: in a private repository the two macOS jobs bill at 10x and the Windows jobs
+# at 2x the Linux rate.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-artifacts-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  # The jobs below repeat the steps of v-release.yml's build jobs and take their runners,
+  # containers and commands from `dist plan`, so they build what a release builds.
+  plan:
+    name: Plan
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Install the dist version pinned in dist-workspace.toml
+        run: |
+          version=$(sed -n 's/^cargo-dist-version = "\(.*\)"$/\1/p' dist-workspace.toml)
+          curl --proto '=https' --tlsv1.2 -LsSf "https://github.com/axodotdev/cargo-dist/releases/download/v${version}/cargo-dist-installer.sh" | sh
+      - id: plan
+        run: |
+          dist plan --output-format=json > plan-dist-manifest.json
+          cat plan-dist-manifest.json
+          echo "matrix=$(jq -c '.ci.github.artifacts_matrix' plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: artifacts-plan-dist-manifest
+          path: plan-dist-manifest.json
+          retention-days: 7
+
+  build:
+    name: Build (${{ join(matrix.targets, ', ') }})
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container && matrix.container.image || null }}
+    timeout-minutes: 45
+    env:
+      BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
+    steps:
+      - name: Enable Windows long paths
+        run: git config --global core.longpaths true
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Install Rust if the container has none
+        if: ${{ matrix.container }}
+        run: |
+          if ! command -v cargo > /dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          fi
+      - name: Install dist
+        run: ${{ matrix.install_dist.run }}
+      - name: Fetch the plan
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: artifacts-*
+          path: target/distrib/
+          merge-multiple: true
+      - name: Install dependencies
+        run: |
+          ${{ matrix.packages_install }}
+      - name: Build artifacts
+        run: dist build --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
+      - id: dist
+        name: List what was built
+        shell: bash
+        run: |
+          echo "paths<<EOF" >> "$GITHUB_OUTPUT"
+          dist print-upload-files-from-manifest --manifest dist-manifest.json >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          cp dist-manifest.json "$BUILD_MANIFEST_NAME"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: artifacts-build-local-${{ join(matrix.targets, '_') }}
+          path: |
+            ${{ steps.dist.outputs.paths }}
+            ${{ env.BUILD_MANIFEST_NAME }}
+          retention-days: 7
+      # Windows arm64 is cross-built in a Linux container, which can't run its result.
+      - name: Smoke test
+        if: ${{ matrix.targets[0] != 'aarch64-pc-windows-msvc' }}
+        shell: bash
+        env:
+          TARGET: ${{ matrix.targets[0] }}
+        run: |
+          archive=target/distrib/bugsplat-cli-$TARGET.tar.gz
+          [[ -e $archive ]] || archive=target/distrib/bugsplat-cli-$TARGET.zip
+          .github/scripts/smoke-test.sh "$archive" "$TARGET"
+
+  # `docker run` on the runner, not a job container: GitHub's JavaScript actions don't run in
+  # an Alpine container on an arm64 runner.
+  linux-containers:
+    name: Run in Alpine and Debian (${{ matrix.target }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-22.04
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: artifacts-build-local-${{ matrix.target }}
+          path: target/distrib/
+      - env:
+          TARGET: ${{ matrix.target }}
+        run: .github/scripts/linux-container-test.sh "target/distrib/bugsplat-cli-$TARGET.tar.gz" "$TARGET" alpine:latest debian:stable-slim
+
+  smoke-windows-arm64:
+    name: Smoke test (aarch64-pc-windows-msvc)
+    needs: build
+    runs-on: windows-11-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: artifacts-build-local-aarch64-pc-windows-msvc
+          path: target/distrib/
+      - shell: bash
+        run: .github/scripts/smoke-test.sh target/distrib/bugsplat-cli-aarch64-pc-windows-msvc.zip aarch64-pc-windows-msvc
+
+  global:
+    name: Installers and npm package
+    needs: [plan, build]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    env:
+      BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Install the dist version pinned in dist-workspace.toml
+        run: |
+          version=$(sed -n 's/^cargo-dist-version = "\(.*\)"$/\1/p' dist-workspace.toml)
+          curl --proto '=https' --tlsv1.2 -LsSf "https://github.com/axodotdev/cargo-dist/releases/download/v${version}/cargo-dist-installer.sh" | sh
+      - name: Fetch the builds
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: artifacts-*
+          path: target/distrib/
+          merge-multiple: true
+      - id: dist
+        name: Build installers, the npm package and checksums
+        run: |
+          dist build --output-format=json --artifacts=global > dist-manifest.json
+          echo "paths<<EOF" >> "$GITHUB_OUTPUT"
+          jq --raw-output ".upload_files[]" dist-manifest.json >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          cp dist-manifest.json "$BUILD_MANIFEST_NAME"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: artifacts-build-global
+          path: |
+            ${{ steps.dist.outputs.paths }}
+            ${{ env.BUILD_MANIFEST_NAME }}
+          retention-days: 7
+      - name: Install the npm package and run bugsplat through it
+        run: .github/scripts/npm-package-test.sh target/distrib

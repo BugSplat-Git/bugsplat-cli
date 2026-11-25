@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # dist generates v-release.yml and refuses to release when the file differs from what it
+    # generates; its action pins are in dist-workspace.toml.
+    exclude-paths:
+      - .github/workflows/v-release.yml
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      interval: monthly

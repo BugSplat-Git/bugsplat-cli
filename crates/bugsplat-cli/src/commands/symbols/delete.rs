@@ -26,7 +26,8 @@ pub async fn run(args: Args, ctx: &Context) -> anyhow::Result<()> {
         application: args.application,
         version: args.version,
     };
-    let token = bugsplat_auth::access_token(&ctx.config).await?;
+    // Fail before asking when there is nothing to authenticate with.
+    bugsplat_auth::access_token(&ctx.config).await?;
 
     let prompt = format!(
         "Delete every symbol file for {} {} in database {}?",
@@ -34,6 +35,8 @@ pub async fn run(args: Args, ctx: &Context) -> anyhow::Result<()> {
     );
     let deleted = confirm(&prompt, args.yes)?;
     if deleted {
+        // Asked for again: the prompt can stay open longer than the first token lasts.
+        let token = bugsplat_auth::access_token(&ctx.config).await?;
         Client::new(bugsplat_core::http_client()?, &ctx.config, token.secret)
             .delete_symbols(&target)
             .await?;

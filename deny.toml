@@ -4,6 +4,20 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+# zip 7 comes in through symbolic-debuginfo's source bundle reader, which symbolic 13 pins.
+# These advisories are in code the build never reaches: symbolic reads entries into memory
+# and never calls an extract API, and zip is built with deflate only, without AES or the
+# legacy decoders. Drop them when symbolic moves to zip 9.
+ignore = [
+    { id = "RUSTSEC-2026-0367", reason = "ZipArchive::extract is not called" },
+    { id = "RUSTSEC-2026-0368", reason = "ZipArchive::extract is not called" },
+    { id = "RUSTSEC-2026-0369", reason = "no extract API is called" },
+    { id = "RUSTSEC-2026-0429", reason = "ZipArchive::extract is not called" },
+    { id = "RUSTSEC-2026-0545", reason = "zip is built without aes-crypto" },
+    { id = "RUSTSEC-2026-0546", reason = "ZipArchive::extract is not called" },
+    { id = "RUSTSEC-2026-0547", reason = "zip is built without legacy-zip" },
+    { id = "RUSTSEC-2026-0548", reason = "ZipStreamReader is not used" },
+]
 
 # Permissive licenses only. A dependency under any other license fails CI, so adding one is a
 # decision someone makes here.
@@ -27,7 +41,13 @@ allow = [
 unused-allowed-license = "allow"
 # MPL-2.0 is file-level copyleft: fine for a dependency we use unmodified, so it is allowed
 # crate by crate.
-exceptions = [{ crate = "option-ext", allow = ["MPL-2.0"] }]
+exceptions = [
+    { crate = "option-ext", allow = ["MPL-2.0"] },
+    # symbolic-debuginfo's Breakpad parser
+    { crate = "nom-supreme", allow = ["MPL-2.0"] },
+    { crate = "brownstone", allow = ["MPL-2.0"] },
+    { crate = "indent_write", allow = ["MPL-2.0"] },
+]
 
 [bans]
 multiple-versions = "allow"

@@ -4,7 +4,7 @@
 use clap::{Args, Parser, Subcommand};
 
 use crate::commands::{
-    auth, completions, databases, defects, groups, mcp, reports, symbols, tool, versions,
+    auth, completions, databases, defects, groups, reports, symbols, tool, versions,
 };
 
 #[derive(Debug, Parser)]
@@ -119,8 +119,6 @@ pub enum Command {
     Tool(tool::ToolCommand),
     /// Print a shell completion script
     Completions(completions::CompletionsArgs),
-    /// Run as a local MCP server over stdio
-    Mcp(mcp::McpArgs),
 }
 
 #[cfg(test)]

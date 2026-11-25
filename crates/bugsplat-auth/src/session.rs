@@ -120,6 +120,13 @@ impl Sessions {
         blocking(move || store.delete(&api_url)).await
     }
 
+    /// Stores a new sign-in while holding the refresh lock, so a refresh of the previous
+    /// session that is in flight can't store its tokens over the new one.
+    pub(crate) async fn sign_in(&self, session: Session) -> Result<()> {
+        let _lock = self.lock().await?;
+        self.save(session).await
+    }
+
     /// Deletes the session while holding the refresh lock, so a refresh that is in flight
     /// can't store a new session after sign-out has returned.
     pub(crate) async fn sign_out(&self) -> Result<()> {

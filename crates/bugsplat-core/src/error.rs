@@ -6,12 +6,6 @@ pub enum Error {
     )]
     NotSignedIn,
 
-    #[error("`bugsplat {command}` is not implemented yet. Follow {issue}")]
-    NotImplemented {
-        command: &'static str,
-        issue: &'static str,
-    },
-
     #[error("{0}")]
     Usage(String),
 

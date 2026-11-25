@@ -2,11 +2,21 @@
 
 `bugsplat` is a command line for [BugSplat](https://www.bugsplat.com) crash reporting, for people and coding agents. It reads crash reports and crash groups, finds the symbol files a crash needs on your disk, and uploads them.
 
-**The CLI is in development and has not been released.** There are no prebuilt binaries or packages yet, and some commands are not built. The plan is in [issue 1](https://github.com/BugSplat-Git/bugsplat-cli/issues/1).
+**The first release is not out yet.** Until it is, the npm package and the release binaries below don't exist, and you [build from source](#build-from-source).
 
 ## Install
 
-For now, you build the CLI from source. You need Rust, installed with [rustup](https://rustup.rs). The first build downloads the toolchain version pinned in `rust-toolchain.toml`.
+```bash
+npm install -g @bugsplat/cli
+```
+
+The package installs the `bugsplat` command on macOS, Linux and Windows, on x64 and arm64. It downloads the binary for your platform when you install it, and the `bugsplat` command starts that binary through Node.js, so you need Node.js 14.18 or later to install the package and to run `bugsplat`. On a machine without Node.js, download the binary for your platform from the [releases page](https://github.com/BugSplat-Git/bugsplat-cli/releases); it runs on its own.
+
+`bugsplat --version` prints the version and the target the binary was built for, for example `bugsplat 0.1.0 (aarch64-apple-darwin)`.
+
+### Build from source
+
+You need Rust, installed with [rustup](https://rustup.rs), and a C++ compiler, which generating Breakpad `.sym` files uses. The first build downloads the toolchain version pinned in `rust-toolchain.toml`.
 
 ```bash
 git clone https://github.com/BugSplat-Git/bugsplat-cli.git
@@ -15,9 +25,7 @@ cargo install --path crates/bugsplat-cli --locked
 bugsplat --version
 ```
 
-`cargo install` puts the `bugsplat` binary in `~/.cargo/bin`. `bugsplat --version` prints the version and the target the binary was built for, for example `bugsplat 0.1.0 (aarch64-apple-darwin)`.
-
-The first release will be the npm package `@bugsplat/cli`, for macOS, Linux and Windows on x64 and arm64. The package downloads the binary for your platform when you install it, and the `bugsplat` command it adds starts that binary through Node.js. You will need Node.js 14.18 or later to install the package and to run `bugsplat`. Each release will also have the binary itself for each platform, which runs without Node.js.
+`cargo install` puts the `bugsplat` binary in `~/.cargo/bin`.
 
 ## Sign in
 
@@ -58,9 +66,11 @@ These options work with every command:
 | Option | Environment variable | What it does |
 | --- | --- | --- |
 | `--database`, `-b` | `BUGSPLAT_DATABASE` | The BugSplat database to use |
-| `--api-url` | `BUGSPLAT_API_URL`, `BUGSPLAT_HOST` | Base URL of the BugSplat API |
+| `--client-id` | `BUGSPLAT_CLIENT_ID`, `SYMBOL_UPLOAD_CLIENT_ID` | OAuth Client ID for the database, for CI |
+| `--client-secret` | `BUGSPLAT_CLIENT_SECRET`, `SYMBOL_UPLOAD_CLIENT_SECRET` | OAuth Client Secret for the database, for CI |
+| `--api-url` | `BUGSPLAT_API_URL`, `BUGSPLAT_HOST` | Base URL of the BugSplat API. Defaults to `https://api.bugsplat.com`. |
 | `--json` | | Print JSON for scripts. The default output is plain text. For the commands that read crash data, `--json` asks the server's tool for `format: "json"` and prints the document it returns. |
-| `--quiet` | | Print only results and errors |
+| `--quiet`, `-q` | | Print only results and errors, without progress or status messages |
 | `--verbose` | | Print more detail about what the command is doing |
 
 Results go to stdout and errors go to stderr. The exit code is 0 for success, 1 for a failure, 2 for a usage error, and 3 when you are not signed in.

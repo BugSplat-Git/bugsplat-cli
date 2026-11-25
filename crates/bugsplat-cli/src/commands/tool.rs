@@ -659,7 +659,7 @@ mod tests {
         let text = describe(&tool);
         assert_eq!(
             text,
-            "get-report\n  Get one crash report\n    database (string)\n    id (integer, required): Crash report id"
+            "get-report\n  Get one crash report\n    id (integer, required): Crash report id\n    database (string)"
         );
     }
 

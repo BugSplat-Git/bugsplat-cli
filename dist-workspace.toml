@@ -34,10 +34,10 @@ install-updater = false
 npm-scope = "@bugsplat"
 npm-package = "cli"
 
-# macOS signing, switched off until the Developer ID certificate is in the repository's
-# secrets (RELEASING.md). Uncomment both lines and run `dist generate`.
-# macos-sign = true
-# github-build-setup = "../release-build-setup.yml"
+# macOS signing with the Developer ID certificate in the repository's secrets (RELEASING.md).
+# The build-setup step makes dist sign with the hardened runtime.
+macos-sign = true
+github-build-setup = "../release-build-setup.yml"
 
 # The Linux builds run in a container with a C++ compiler for musl. Breakpad .sym generation
 # (symbolic-demangle) compiles C++, and Ubuntu's musl-tools has only the C compiler `musl-gcc`.

@@ -150,9 +150,11 @@ Every new version has a new hash, so after every upgrade macOS asks for the logi
    | `CODESIGN_CERTIFICATE_PASSWORD` | The password of the `.p12` file |
    | `CODESIGN_IDENTITY` | The certificate's name, in the form `Developer ID Application: <team name> (<team ID>)` |
 
-4. In `dist-workspace.toml`, uncomment `macos-sign = true` and `github-build-setup`, run `dist generate`, and commit both files.
+4. `macos-sign = true` and `github-build-setup` in `dist-workspace.toml`, which are already set.
 
-Add the secrets before you turn on `macos-sign`. dist reads an unset GitHub secret as an empty value and tries to sign with it. We read this in dist 0.34.0's source and have not run it.
+The certificate can be the one `bugsplat-apple` signs with. That repository keeps it in the secrets `BUILD_CERTIFICATE_BASE64` and `P12_PASSWORD`; GitHub never shows a secret's value again, so add the same two values here under dist's names, plus the identity.
+
+Add the secrets before you push a release tag. dist reads an unset GitHub secret as an empty value and tries to sign with it. We read this in dist 0.34.0's source and have not run it.
 
 `github-build-setup` adds the step in `.github/release-build-setup.yml` to the release build. The step sets `CODESIGN_OPTIONS=runtime`, which makes dist sign with the hardened runtime. Apple's notary service rejects a binary without it.
 

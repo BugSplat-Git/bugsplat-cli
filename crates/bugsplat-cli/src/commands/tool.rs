@@ -363,11 +363,16 @@ pub(crate) async fn call(
     call_with(ctx, client, tool, arguments).await
 }
 
+/// BugSplat's tools describe `format` without an enum, so a bad value is the tool's own
+/// error; an enum that leaves out `json` still rules it out.
 fn takes_json_format(schema: &Value) -> bool {
-    schema
-        .pointer("/properties/format/enum")
-        .and_then(Value::as_array)
-        .is_some_and(|formats| formats.iter().any(|format| format == "json"))
+    let Some(format) = schema.pointer("/properties/format") else {
+        return false;
+    };
+    match format.get("enum").and_then(Value::as_array) {
+        Some(formats) => formats.iter().any(|format| format == "json"),
+        None => true,
+    }
 }
 
 async fn call_with(
@@ -629,6 +634,9 @@ mod tests {
         })));
         assert!(!takes_json_format(&json!({
             "properties": {"format": {"type": "string", "enum": ["text"]}}
+        })));
+        assert!(takes_json_format(&json!({
+            "properties": {"format": {"type": "string", "description": "text (default) or json."}}
         })));
         assert!(!takes_json_format(&json!({"properties": {"database": {}}})));
     }

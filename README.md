@@ -48,6 +48,7 @@ The table lists the commands in the first release.
 | `bugsplat symbols info <file>...` | Print each file's debug id, module name, and type |
 | `bugsplat symbols find` | Search folders for symbol files that match debug ids or names |
 | `bugsplat symbols upload`, `symbols delete` | Upload an application version's symbol files, or delete them |
+| `bugsplat symbols dump <file>...` | Generate Breakpad `.sym` files from binaries, without uploading them |
 | `bugsplat completions <shell>` | Print a shell completion script |
 
 The commands that read crash data call the tools of BugSplat's hosted MCP server, so `bugsplat groups list` returns what a coding agent gets from the `list-groups` tool.
@@ -115,7 +116,7 @@ bugsplat symbols upload -b fred -a MyApp -v 1.0.0 -d build/Release -f "**/*.{pdb
 | `-i`, `--clientId` | `--client-id`, or `BUGSPLAT_CLIENT_ID`. `SYMBOL_UPLOAD_CLIENT_ID` still works. |
 | `-s`, `--clientSecret` | `--client-secret`, or `BUGSPLAT_CLIENT_SECRET`. `SYMBOL_UPLOAD_CLIENT_SECRET` still works. |
 | `-r`, `--remove` | A separate command: `bugsplat symbols delete -b fred -a MyApp -v 1.0.0` |
-| `-m`, `--dumpSyms` | Not in the first release. Generating `.sym` files is planned in [issue 11](https://github.com/BugSplat-Git/bugsplat-cli/issues/11). |
+| `-m`, `--dumpSyms` | `-m`, `--dump-syms`. Generates a Breakpad `.sym` file from each selected binary and uploads that in place of the binary. |
 | `-h`, `--help` | `-h`, `--help` |
 
 What changes:

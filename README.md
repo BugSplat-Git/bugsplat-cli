@@ -2,8 +2,6 @@
 
 `bugsplat` is a command line for [BugSplat](https://www.bugsplat.com) crash reporting, for people and coding agents. It reads crash reports and crash groups, finds the symbol files a crash needs on your disk, and uploads them.
 
-**The first release is not out yet.** Until it is, the npm package and the release binaries below don't exist, and you [build from source](#build-from-source).
-
 ## Install
 
 ```bash

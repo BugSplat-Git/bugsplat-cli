@@ -39,6 +39,18 @@ npm-package = "cli"
 # macos-sign = true
 # github-build-setup = "../release-build-setup.yml"
 
+# The Linux builds run in a container with a C++ compiler for musl. Breakpad .sym generation
+# (symbolic-demangle) compiles C++, and Ubuntu's musl-tools has only the C compiler `musl-gcc`.
+# The images are pinned by digest; RELEASING.md says how to move the pins. `host` is the
+# container's own platform: left out, dist assumes x64 and cross-compiles arm64 with zig.
+[dist.github-custom-runners.x86_64-unknown-linux-musl]
+runner = "ubuntu-22.04"
+container = { image = "ghcr.io/rust-cross/rust-musl-cross:x86_64-musl@sha256:3f1010eb48311dfde5d51f011163451940af34bd317355c4a8652ce6b4b61051", host = "x86_64-unknown-linux-gnu" }
+
+[dist.github-custom-runners.aarch64-unknown-linux-musl]
+runner = "ubuntu-22.04-arm"
+container = { image = "ghcr.io/rust-cross/rust-musl-cross:aarch64-musl@sha256:02e790506c5f15a533bc05b3af8719b16a8a2314480f6f0fdc0166432035d9b4", host = "aarch64-unknown-linux-gnu" }
+
 # `dist generate` writes these commits into the release workflow. Dependabot skips that file
 # (.github/dependabot.yml) because dist refuses to release when it differs from what it generates.
 [dist.github-action-commits]

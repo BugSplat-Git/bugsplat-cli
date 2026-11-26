@@ -33,7 +33,7 @@ bugsplat login
 
 `bugsplat login` opens your browser so you can sign in to BugSplat. With `--no-browser`, it prints the sign-in URL and leaves opening it to you.
 
-The CLI stores your session in your operating system's keychain. On a machine without a keychain, such as a container, it stores the session in a file that only your user can read. Set `BUGSPLAT_TOKEN_STORE=file` to always use the file. Builds made with `cargo build` (debug builds) use the file by default, so development never touches your keychain.
+The CLI stores your session in your operating system's keychain. On a machine without a keychain, such as a container, it stores the session in a file. On macOS and Linux, only your user can read that file; on Windows, the file has its folder's permissions, and the default folder is inside your user profile. Set `BUGSPLAT_TOKEN_STORE=file` to always use the file. Builds made with `cargo build` (debug builds) use the file by default, so development never touches your keychain.
 
 `bugsplat whoami` shows who is signed in. `bugsplat logout` deletes the stored session.
 
